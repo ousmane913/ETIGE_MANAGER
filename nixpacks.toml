@@ -1,0 +1,13 @@
+[phases.build]
+cmds = [
+  "cd frontend && npm install",
+  "cd frontend && npm run build",
+  "cd .. && pip install -r requirements.txt",
+  "python manage.py collectstatic --noinput"
+]
+
+[phases.start]
+cmd = "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
+
+[variables]
+PORT = "8000"
