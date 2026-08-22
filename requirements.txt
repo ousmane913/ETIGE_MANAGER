@@ -3,3 +3,7 @@ psycopg[binary]>=3.2
 python-dotenv>=1.0
 inertia-django>=1.0
 django-vite>=3.0
+reportlab>=4.2
+gunicorn>=23.0
+python-docx>=1.1
+dj-database-url>=2.3

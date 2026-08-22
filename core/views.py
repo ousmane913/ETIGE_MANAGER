@@ -25,6 +25,6 @@ def logout_view(request):
 def dashboard(request):
     return render(request, 'Dashboard', {
         'metrics': {'clients': Client.objects.count(), 'projects': Project.objects.count(), 'quotesPending': Quote.objects.filter(status=Quote.Status.DRAFT).count(), 'activeSites': Site.objects.filter(status=Site.Status.IN_PROGRESS).count()},
-        'recentProjects': list(Project.objects.select_related('client').order_by('-created_at').values('id', 'name', 'status', 'client__company_name')[:6]),
+        'recentProjects': list(Project.objects.order_by('-created_at').values('id', 'name', 'status', 'client')[:6]),
         'user': {'name': request.user.get_full_name() or request.user.username, 'role': request.user.groups.first().name if request.user.groups.exists() else 'Administrateur'},
     })

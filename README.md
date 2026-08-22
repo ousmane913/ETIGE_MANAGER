@@ -2,6 +2,8 @@
 
 Application de gestion de projets BTP avec le workflow **Survey → Devis → Achat → Chantier → Rapport de clôture**.
 
+Pour le déploiement cloud avec domaine, HTTPS, sauvegardes et accès depuis le domicile, consulter [DEPLOIEMENT_PRODUCTION.md](DEPLOIEMENT_PRODUCTION.md).
+
 ## Fonctionnalités de la V1
 
 - Authentification Django et rôles prêts à attribuer : Administrateur, Direction, Conducteur de travaux, Métreur, Achats, Finance, Client.

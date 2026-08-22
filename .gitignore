@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 .env
 *.zip
+media/
+*.db
+*.sqlite3
