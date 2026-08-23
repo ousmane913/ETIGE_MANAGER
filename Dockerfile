@@ -13,10 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy frontend files and build
 COPY frontend/package.json frontend/package-lock.json frontend/
-COPY frontend/tsconfig.json frontend/ 2>/dev/null || true
-COPY frontend/vite.config.ts frontend/ 2>/dev/null || true
-COPY frontend/tailwind.config.js frontend/ 2>/dev/null || true
-COPY frontend/postcss.config.js frontend/ 2>/dev/null || true
+COPY frontend/tsconfig.json frontend/ || true
+COPY frontend/vite.config.ts frontend/ || true
+COPY frontend/tailwind.config.js frontend/ || true
+COPY frontend/postcss.config.js frontend/ || true
 COPY frontend/src frontend/src
 
 WORKDIR /app/frontend
