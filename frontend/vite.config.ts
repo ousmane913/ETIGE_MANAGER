@@ -5,10 +5,10 @@ export default defineConfig({
   plugins: [react()],
   base: '/static/',
   build: {
-    outDir: 'frontend/dist',
+    outDir: 'dist',
     emptyOutDir: true,
     manifest: true,
-    rollupOptions: { input: 'frontend/src/main.tsx' },
+    rollupOptions: { input: 'src/main.tsx' },
   },
   server: { port: 5173, strictPort: true },
 })
