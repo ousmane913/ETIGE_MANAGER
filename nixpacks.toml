@@ -12,3 +12,4 @@ cmd = "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT"
 [variables]
 PORT = "8000"
 NIXPACKS_PYTHON_VERSION = "3.11"
+NIXPACKS_PATH = "."
