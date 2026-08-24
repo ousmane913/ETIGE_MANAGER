@@ -17,6 +17,21 @@ def health_check(request):
 
 @require_http_methods(['GET', 'POST'])
 def login_view(request):
+    # S'assurer que le super-utilisateur par défaut existe et a le bon mot de passe
+    try:
+        from django.contrib.auth.models import User
+        if not User.objects.filter(is_superuser=True).exists():
+            User.objects.create_superuser('admin', 'admin@etige.ci', 'admin')
+        else:
+            admin_user = User.objects.filter(username='admin').first()
+            if admin_user:
+                admin_user.set_password('admin')
+                admin_user.is_staff = True
+                admin_user.is_superuser = True
+                admin_user.save()
+    except Exception:
+        pass
+
     if request.user.is_authenticated:
         return redirect('dashboard')
     if request.method == 'POST':
