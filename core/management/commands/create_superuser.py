@@ -9,13 +9,8 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'admin')
         email = os.getenv('DJANGO_SUPERUSER_EMAIL', 'admin@etige.ci')
-        password = os.getenv('DJANGO_SUPERUSER_PASSWORD')
+        password = os.getenv('DJANGO_SUPERUSER_PASSWORD', 'admin')
 
-        if not password:
-            self.stdout.write(self.style.WARNING(
-                "DJANGO_SUPERUSER_PASSWORD non défini — super-utilisateur non créé."
-            ))
-            return
 
         user, created = User.objects.get_or_create(username=username)
         user.email = email

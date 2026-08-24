@@ -19,6 +19,12 @@ services:
         fromDatabase:
           name: etige-manager-db
           property: connectionString
+      - key: DJANGO_SUPERUSER_USERNAME
+        value: admin
+      - key: DJANGO_SUPERUSER_EMAIL
+        value: admin@etige.ci
+      - key: DJANGO_SUPERUSER_PASSWORD
+        value: admin
 
 databases:
   - name: etige-manager-db
