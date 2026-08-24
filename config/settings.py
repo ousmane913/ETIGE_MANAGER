@@ -36,7 +36,10 @@ DATABASES = {'default': {
     'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'), 'PORT': os.getenv('POSTGRES_PORT', '5432'),
 }}
 if os.getenv('DATABASE_URL'):
-    DATABASES['default'] = dj_database_url.parse(os.environ['DATABASE_URL'], conn_max_age=600, ssl_require=not DEBUG)
+    ssl_require = not DEBUG
+    if os.getenv('DISABLE_DATABASE_SSL', 'False').lower() == 'true':
+        ssl_require = False
+    DATABASES['default'] = dj_database_url.parse(os.environ['DATABASE_URL'], conn_max_age=600, ssl_require=ssl_require)
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
