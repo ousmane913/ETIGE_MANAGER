@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = "Crée le super-utilisateur initial depuis les variables d'environnement (idempotent)."
+    help = "Crée ou met à jour le super-utilisateur depuis les variables d'environnement."
 
     def handle(self, *args, **kwargs):
         username = os.getenv('DJANGO_SUPERUSER_USERNAME', 'admin')
@@ -17,13 +17,18 @@ class Command(BaseCommand):
             ))
             return
 
-        if User.objects.filter(username=username).exists():
-            self.stdout.write(self.style.SUCCESS(
-                f"Super-utilisateur '{username}' existe déjà — rien à faire."
-            ))
-            return
+        user, created = User.objects.get_or_create(username=username)
+        user.email = email
+        user.is_staff = True
+        user.is_superuser = True
+        user.set_password(password)
+        user.save()
 
-        User.objects.create_superuser(username=username, email=email, password=password)
-        self.stdout.write(self.style.SUCCESS(
-            f"Super-utilisateur '{username}' créé avec succès."
-        ))
+        if created:
+            self.stdout.write(self.style.SUCCESS(
+                f"Super-utilisateur '{username}' créé avec succès."
+            ))
+        else:
+            self.stdout.write(self.style.SUCCESS(
+                f"Mot de passe du super-utilisateur '{username}' mis à jour."
+            ))
