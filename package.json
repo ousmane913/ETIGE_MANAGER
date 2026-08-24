@@ -1,0 +1,7 @@
+{
+  "name": "btp-manager-root",
+  "private": true,
+  "scripts": {
+    "postinstall": "cd frontend && npm install && npm run build"
+  }
+}

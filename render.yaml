@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: etige-manager
+    runtime: python
+    buildCommand: bash build.sh
+    preDeployCommand: python manage.py migrate && python manage.py setup_roles
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3
+    healthCheckPath: /connexion/
+    disk:
+      name: etige-media
+      mountPath: /opt/render/project/src/media
+      sizeGB: 10
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "etige-manager.onrender.com"
+      - key: CSRF_TRUSTED_ORIGINS
+        value: "https://etige-manager.onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: etige-manager-db
+          property: connectionString
+
+databases:
+  - name: etige-manager-db
+    plan: basic-256mb
+    databaseName: etige_manager
+    user: etige_db_user
