@@ -1,9 +1,15 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
 from business.models import Client, Project, Quote, Site
+
+def health_check(request):
+    """Endpoint léger pour le health check Render — aucune dépendance frontend."""
+    return JsonResponse({'status': 'ok'})
+
 
 @require_http_methods(['GET', 'POST'])
 def login_view(request):
