@@ -60,7 +60,14 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 INERTIA_LAYOUT = 'base.html'
-DJANGO_VITE = {'default': {'dev_mode': DEBUG, 'dev_server_host': 'localhost', 'dev_server_port': 5173}}
+DJANGO_VITE = {
+    'default': {
+        'dev_mode': DEBUG,
+        'dev_server_host': 'localhost',
+        'dev_server_port': 5173,
+        'manifest_path': BASE_DIR / 'frontend' / 'dist' / '.vite' / 'manifest.json',
+    }
+}
 DJANGO_VITE_ASSETS_PATH = BASE_DIR / 'frontend' / 'dist'
 # Inclure frontend/dist dans STATICFILES_DIRS uniquement s'il existe (évite
 # une erreur de démarrage si le build frontend n'a pas encore été exécuté).
@@ -74,3 +81,24 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}
