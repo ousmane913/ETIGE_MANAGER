@@ -67,7 +67,7 @@ DJANGO_VITE_ASSETS_PATH = BASE_DIR / 'frontend' / 'dist'
 STATICFILES_DIRS = [DJANGO_VITE_ASSETS_PATH] if DJANGO_VITE_ASSETS_PATH.exists() else []
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 if not DEBUG:
