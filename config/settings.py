@@ -16,10 +16,16 @@ INSTALLED_APPS = [
     'inertia', 'django_vite', 'core', 'business',
 ]
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware', 'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware', 'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware', 'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware', 'core.middleware.JsonRequestMiddleware', 'inertia.middleware.InertiaMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'core.middleware.JsonRequestMiddleware',
+    'inertia.middleware.InertiaMiddleware',
 ]
 ROOT_URLCONF = 'config.urls'
 TEMPLATES = [{
@@ -56,9 +62,12 @@ LOGIN_URL = 'login'
 INERTIA_LAYOUT = 'base.html'
 DJANGO_VITE = {'default': {'dev_mode': DEBUG, 'dev_server_host': 'localhost', 'dev_server_port': 5173}}
 DJANGO_VITE_ASSETS_PATH = BASE_DIR / 'frontend' / 'dist'
-STATICFILES_DIRS = [DJANGO_VITE_ASSETS_PATH]
+# Inclure frontend/dist dans STATICFILES_DIRS uniquement s'il existe (évite
+# une erreur de démarrage si le build frontend n'a pas encore été exécuté).
+STATICFILES_DIRS = [DJANGO_VITE_ASSETS_PATH] if DJANGO_VITE_ASSETS_PATH.exists() else []
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 if not DEBUG:
