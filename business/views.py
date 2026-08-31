@@ -129,16 +129,17 @@ def _detail_props(request, project):
     return {'project': {
         'id': project.id, 'reference': project.reference, 'name': project.name, 'address': project.address, 'status': project.status,
         'client': project.client, 'targetEndDate': project.target_end_date,
+        'isManagement': is_management,
         'estimatedBudget': str(project.budget) if is_management and project.budget else None,
         'budget': str(final_budget) if is_management and final_budget else None,
-        'finalCost': str(final_cost),
+        'finalCost': str(final_cost) if is_management else None,
         'profit': str(profit) if is_management and profit is not None else None,
         'survey': related_or_none(project, 'survey') and {'validated': project.survey.is_validated, 'visitDate': project.survey.visit_date, 'findings': project.survey.findings},
         'quote': quote and {
-            'id': quote.id, 'number': quote.number, 
-            'amount': str(quote.amount_excl_tax), 
+            'id': quote.id, 'number': quote.number,
+            'amount': str(quote.amount_excl_tax),
             'adjustedAmount': str(quote.final_adjusted_amount) if is_management else None,
-            'status': quote.status, 
+            'status': quote.status,
             'lines': [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else None, 'amount': str(line.amount)} for line in quote.lines.all()]
         },
         'purchases': list(project.purchases.values('reference', 'supplier', 'amount', 'status')),
