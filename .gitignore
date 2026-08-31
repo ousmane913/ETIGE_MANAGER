@@ -116,10 +116,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# Vite / Frontend builds
-dist/
+# Vite / Frontend builds — on commit frontend/dist/ pour Render
+# (le manifest.json doit être disponible sans rebuild en ligne)
 dist-ssr/
 *.local
+# Ignorer dist/ sauf frontend/dist/
+dist/
+!frontend/dist/
+!frontend/dist/**
 
 # Environment variables
 .env
