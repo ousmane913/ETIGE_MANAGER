@@ -64,11 +64,11 @@ export default function Show({ project }: any) {
                         </div>
                     )}
 
-                    {/* Dépenses : liste visible par tous, lien ajout réservé DG/DT */}
+                    {/* Dépenses : accessible à tous */}
                     <div className="card">
                         <div className="flex items-center justify-between">
                             <h3 className="font-bold">Dépenses hors-devis</h3>
-                            {isManagement && <Link href={`/projets/${project.id}/depense/`} className="text-xs font-bold text-amber-700">+ Ajouter</Link>}
+                            <Link href={`/projets/${project.id}/depense/`} className="text-xs font-bold text-amber-700">+ Ajouter</Link>
                         </div>
                         {expenses.length > 0
                             ? <ul className="mt-4 space-y-3">{expenses.map((exp: any, i: number) => <li key={i} className="flex justify-between text-sm"><span className="text-slate-600">{exp.description}</span><span className="font-semibold">{Number(exp.amount).toLocaleString('fr-FR')} FCFA</span></li>)}</ul>
