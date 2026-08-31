@@ -121,6 +121,7 @@ def _detail_props(request, project):
     # Budget Final saisi par DG/DT dans le formulaire de clôture
     report = related_or_none(project, 'closure_report')
     final_budget = report.final_budget if report and report.final_budget else None
+    quote = related_or_none(project, 'quote')
 
     profit = None
     if final_budget is not None:
@@ -145,7 +146,7 @@ def _detail_props(request, project):
         'purchases': list(project.purchases.values('reference', 'supplier', 'amount', 'status')),
         'expenses': list(project.expenses.values('description', 'amount', 'date', 'created_at')),
         'site': related_or_none(project, 'site') and {'status': project.site.status, 'progress': project.site.progress, 'notes': project.site.notes},
-        'report': related_or_none(project, 'closure_report') and {'deliveredOn': project.closure_report.delivered_on},
+        'report': report and {'deliveredOn': report.delivered_on},
         'photos': [{'url': photo.image.url, 'caption': photo.caption, 'category': photo.category} for photo in project.photos.all()],
     }}
 
