@@ -11,8 +11,8 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
-from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm
-from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, Site, ClosureReport, ProjectPhoto
+from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm
+from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, Site, ClosureReport, ProjectPhoto, Expense
 
 def errors(form): return {field: [str(error) for error in field_errors] for field, field_errors in form.errors.items()}
 def form_value(value):
@@ -87,8 +87,15 @@ def project_delete(request, project_id):
 @require_http_methods(['GET', 'POST'])
 def project_create(request):
     form = ProjectForm(request.POST or None)
+    if not request.user.groups.filter(name__in=['DG', 'DT']).exists():
+        if 'budget' in form.fields: del form.fields['budget']
     if request.method == 'POST' and form.is_valid():
-        project = form.save(); messages.success(request, 'Projet créé : le Survey peut démarrer.'); return redirect('project-detail', project.id)
+        project = form.save(commit=False)
+        if not request.user.groups.filter(name__in=['DG', 'DT']).exists():
+            project.budget = 0
+        project.save()
+        messages.success(request, 'Projet créé : le Survey peut démarrer.')
+        return redirect('project-detail', project.id)
     return render(request, 'Shared/Form', form_props(form, 'Nouveau projet', '/projets/nouveau/', 'Le projet entre d’abord en phase Survey.'))
 
 @login_required
@@ -96,27 +103,54 @@ def project_create(request):
 def project_edit(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     form = ProjectForm(request.POST or None, instance=project)
+    if not request.user.groups.filter(name__in=['DG', 'DT']).exists():
+        if 'budget' in form.fields: del form.fields['budget']
     if request.method == 'POST' and form.is_valid():
         form.save()
         messages.success(request, 'Projet modifié.')
         return redirect('project-detail', project.id)
     return render(request, 'Shared/Form', form_props(form, 'Modifier le projet', f'/projets/{project.id}/modifier/', 'Mettez à jour les informations générales du projet.'))
 
-def _detail_props(project):
+def _detail_props(request, project):
+    is_management = request.user.groups.filter(name__in=['DG', 'DT']).exists()
+
+    total_purchases = sum(p.amount for p in project.purchases.all())
+    total_expenses = sum(e.amount for e in project.expenses.all())
+    final_cost = total_purchases + total_expenses
+
+    # Budget Final saisi par DG/DT dans le formulaire de clôture
+    report = related_or_none(project, 'closure_report')
+    final_budget = report.final_budget if report and report.final_budget else None
+
+    profit = None
+    if final_budget is not None:
+        profit = float(final_budget) - float(final_cost)
+
     return {'project': {
         'id': project.id, 'reference': project.reference, 'name': project.name, 'address': project.address, 'status': project.status,
-        'client': project.client, 'budget': str(project.budget), 'targetEndDate': project.target_end_date,
+        'client': project.client, 'targetEndDate': project.target_end_date,
+        'estimatedBudget': str(project.budget) if is_management and project.budget else None,
+        'budget': str(final_budget) if is_management and final_budget else None,
+        'finalCost': str(final_cost),
+        'profit': str(profit) if is_management and profit is not None else None,
         'survey': related_or_none(project, 'survey') and {'validated': project.survey.is_validated, 'visitDate': project.survey.visit_date, 'findings': project.survey.findings},
-        'quote': related_or_none(project, 'quote') and {'id': project.quote.id, 'number': project.quote.number, 'amount': str(project.quote.amount_excl_tax), 'status': project.quote.status, 'lines': [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price), 'amount': str(line.amount)} for line in project.quote.lines.all()]},
+        'quote': quote and {
+            'id': quote.id, 'number': quote.number, 
+            'amount': str(quote.amount_excl_tax), 
+            'adjustedAmount': str(quote.final_adjusted_amount) if is_management else None,
+            'status': quote.status, 
+            'lines': [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else None, 'amount': str(line.amount)} for line in quote.lines.all()]
+        },
         'purchases': list(project.purchases.values('reference', 'supplier', 'amount', 'status')),
+        'expenses': list(project.expenses.values('description', 'amount', 'date', 'created_at')),
         'site': related_or_none(project, 'site') and {'status': project.site.status, 'progress': project.site.progress, 'notes': project.site.notes},
-        'report': related_or_none(project, 'closure_report') and {'deliveredOn': project.closure_report.delivered_on, 'finalCost': str(project.closure_report.final_cost)},
+        'report': related_or_none(project, 'closure_report') and {'deliveredOn': project.closure_report.delivered_on},
         'photos': [{'url': photo.image.url, 'caption': photo.caption, 'category': photo.category} for photo in project.photos.all()],
     }}
 
 @login_required
 def project_detail(request, project_id):
-    return render(request, 'Projects/Show', _detail_props(get_object_or_404(Project, pk=project_id)))
+    return render(request, 'Projects/Show', _detail_props(request, get_object_or_404(Project, pk=project_id)))
 
 def _workflow_form(request, project_id, Form, model, title, phase, extra=None):
     project = get_object_or_404(Project, pk=project_id)
@@ -171,7 +205,8 @@ def quote_create(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     quote = related_or_none(project, 'quote') or Quote(project=project, number=project.reference)
     form = QuoteForm(request.POST or None, instance=quote)
-    lines = [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
+    is_management = request.user.groups.filter(name__in=['DG', 'DT']).exists()
+    lines = [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else ''} for line in quote.lines.all()] if quote.pk else []
     if request.method == 'POST':
         try:
             submitted_lines = json.loads(request.POST.get('lines', '[]'))
@@ -200,13 +235,22 @@ def quote_create(request, project_id):
                 quantity = Decimal(str(raw_line['quantity']))
                 if quantity != quantity.to_integral_value():
                     raise ValueError(f'La quantité de la ligne {index} doit être un nombre entier.')
-                parsed_lines.append(QuoteLine(quantity=int(quantity), designation=str(raw_line['designation']).strip(), unit_price=Decimal(str(raw_line['unitPrice']))))
+                
+                unit_price = Decimal(str(raw_line['unitPrice']))
+                adjusted_unit_price = None
+                if request.user.groups.filter(name__in=['DG', 'DT']).exists() and 'adjustedUnitPrice' in raw_line and raw_line['adjustedUnitPrice']:
+                    adjusted_unit_price = Decimal(str(raw_line['adjustedUnitPrice']))
+
+                parsed_lines.append(QuoteLine(quantity=int(quantity), designation=str(raw_line['designation']).strip(), unit_price=unit_price, adjusted_unit_price=adjusted_unit_price))
             if not parsed_lines:
                 raise ValueError('Ajoutez au moins une ligne au devis.')
             total = sum((line.quantity * line.unit_price for line in parsed_lines), Decimal('0'))
+            adjusted_total = sum((line.quantity * line.final_unit_price for line in parsed_lines), Decimal('0'))
             with transaction.atomic():
                 record = form.save(commit=False)
                 record.amount_excl_tax = total
+                if request.user.groups.filter(name__in=['DG', 'DT']).exists():
+                    record.adjusted_amount_excl_tax = adjusted_total
                 record.full_clean()
                 record.save()
                 record.lines.all().delete()
@@ -214,6 +258,13 @@ def quote_create(request, project_id):
                     line.quote = record
                     line.full_clean()
                 QuoteLine.objects.bulk_create(parsed_lines)
+                
+                # Mise à jour de l'achat global si existant
+                purchase = project.purchases.first()
+                if purchase:
+                    purchase.amount = record.amount_excl_tax
+                    purchase.save()
+
                 if record.status == Quote.Status.APPROVED:
                     project.status = Project.Status.PURCHASE
                     project.save()
@@ -230,7 +281,7 @@ def quote_create(request, project_id):
             for field_error in field_errors:
                 if field_name != '__all__':
                     form.add_error(None, f'{form.fields[field_name].label if field_name in form.fields else field_name} : {field_error}')
-    return render(request, 'Quote/Form', {'title': 'Devis', 'subtitle': f'Projet {project.reference} — {project.name}', 'action': f'/projets/{project.id}/devis/', 'fields': form_props(form, 'Devis', '', '')['fields'], 'errors': form_props(form, 'Devis', '', '')['errors'], 'lines': lines})
+    return render(request, 'Quote/Form', {'title': 'Devis', 'subtitle': f'Projet {project.reference} — {project.name}', 'action': f'/projets/{project.id}/devis/', 'fields': form_props(form, 'Devis', '', '')['fields'], 'errors': form_props(form, 'Devis', '', '')['errors'], 'lines': lines, 'is_management': is_management})
 
 @login_required
 @require_http_methods(['GET'])
@@ -270,12 +321,12 @@ def quote_pdf(request, project_id):
             y = height - 20 * mm
         pdf.drawString(20 * mm, y, str(line.quantity))
         pdf.drawString(40 * mm, y, line.designation[:48])
-        pdf.drawRightString(155 * mm, y, f'{line.unit_price:,.2f} FCFA')
-        pdf.drawRightString(195 * mm, y, f'{line.amount:,.2f} FCFA')
+        pdf.drawRightString(155 * mm, y, f'{line.final_unit_price:,.2f} FCFA')
+        pdf.drawRightString(195 * mm, y, f'{line.final_amount:,.2f} FCFA')
         y -= 5 * mm
     y -= 5 * mm
     pdf.setFont('Helvetica-Bold', 10)
-    pdf.drawRightString(195 * mm, y, f'Montant : {quote.amount_excl_tax:,.2f} FCFA')
+    pdf.drawRightString(195 * mm, y, f'Montant : {quote.final_adjusted_amount:,.2f} FCFA')
     pdf.save()
     response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="devis-{quote.number}.pdf"'
@@ -300,3 +351,10 @@ def closure_create(request, project_id):
         project.status = Project.Status.CLOSED
         project.save()
     return _workflow_form(request, project_id, ClosureReportForm, ClosureReport, 'Rapport de clôture', 'cloture', advance)
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def expense_create(request, project_id):
+    def advance(record, project):
+        record.created_by = request.user
+    return _workflow_form(request, project_id, ExpenseForm, Expense, 'Dépense Supplémentaire', 'depense', advance)

@@ -16,4 +16,5 @@ urlpatterns = [
     path('projets/<int:project_id>/achats/', views.purchase_create, name='purchase-create'),
     path('projets/<int:project_id>/chantier/', views.site_create, name='site-create'),
     path('projets/<int:project_id>/cloture/', views.closure_create, name='closure-create'),
+    path('projets/<int:project_id>/depense/', views.expense_create, name='expense-create'),
 ]

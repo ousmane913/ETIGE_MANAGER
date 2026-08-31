@@ -65,8 +65,79 @@ def logout_view(request):
 
 @login_required
 def dashboard(request):
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
+    from collections import defaultdict
+
+    today = date.today()
+    two_years_ago = today - relativedelta(years=2)
+
+    projects = Project.objects.filter(created_at__date__gte=two_years_ago).values('created_at', 'status')
+
+    # --- Mensuel : 12 derniers mois ---
+    monthly = defaultdict(lambda: {'created': 0, 'closed': 0})
+    for i in range(11, -1, -1):
+        d = today - relativedelta(months=i)
+        key = d.strftime('%b %Y')
+        monthly[key]  # init
+
+    for p in projects:
+        d = p['created_at'].date()
+        if d >= today - relativedelta(months=12):
+            key = d.strftime('%b %Y')
+            monthly[key]['created'] += 1
+            if p['status'] == Project.Status.CLOSED:
+                monthly[key]['closed'] += 1
+
+    monthly_data = [{'label': k, 'created': v['created'], 'closed': v['closed']} for k, v in monthly.items()]
+
+    # --- Trimestriel : 8 derniers trimestres ---
+    def quarter_key(d):
+        q = (d.month - 1) // 3 + 1
+        return f'T{q} {d.year}'
+
+    quarterly = defaultdict(lambda: {'created': 0, 'closed': 0})
+    for i in range(7, -1, -1):
+        d = today - relativedelta(months=i * 3)
+        key = quarter_key(d)
+        quarterly[key]  # init
+
+    for p in projects:
+        d = p['created_at'].date()
+        if d >= today - relativedelta(months=24):
+            key = quarter_key(d)
+            if key in quarterly:
+                quarterly[key]['created'] += 1
+                if p['status'] == Project.Status.CLOSED:
+                    quarterly[key]['closed'] += 1
+
+    quarterly_data = [{'label': k, 'created': v['created'], 'closed': v['closed']} for k, v in quarterly.items()]
+
+    # --- Semestriel : 4 derniers semestres ---
+    def semester_key(d):
+        s = 1 if d.month <= 6 else 2
+        return f'S{s} {d.year}'
+
+    semesterly = defaultdict(lambda: {'created': 0, 'closed': 0})
+    for i in range(3, -1, -1):
+        d = today - relativedelta(months=i * 6)
+        key = semester_key(d)
+        semesterly[key]  # init
+
+    for p in projects:
+        d = p['created_at'].date()
+        if d >= today - relativedelta(months=24):
+            key = semester_key(d)
+            if key in semesterly:
+                semesterly[key]['created'] += 1
+                if p['status'] == Project.Status.CLOSED:
+                    semesterly[key]['closed'] += 1
+
+    semesterly_data = [{'label': k, 'created': v['created'], 'closed': v['closed']} for k, v in semesterly.items()]
+
     return render(request, 'Dashboard', {
         'metrics': {'clients': Client.objects.count(), 'projects': Project.objects.count(), 'quotesPending': Quote.objects.filter(status=Quote.Status.DRAFT).count(), 'activeSites': Site.objects.filter(status=Site.Status.IN_PROGRESS).count()},
         'recentProjects': list(Project.objects.order_by('-created_at').values('id', 'name', 'status', 'client')[:6]),
         'user': {'name': request.user.get_full_name() or request.user.username, 'role': request.user.groups.first().name if request.user.groups.exists() else 'Administrateur'},
+        'projectsEvolution': {'monthly': monthly_data, 'quarterly': quarterly_data, 'semesterly': semesterly_data},
     })

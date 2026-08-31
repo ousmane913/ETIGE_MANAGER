@@ -53,6 +53,7 @@ class Quote(TimestampedModel):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='quote')
     number = models.CharField(max_length=40)
     amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
+    adjusted_amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18)
     validity_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
@@ -64,6 +65,8 @@ class Quote(TimestampedModel):
             raise ValidationError('Le Survey doit être validé avant la création du devis.')
     @property
     def amount_incl_tax(self): return self.amount_excl_tax * (1 + self.vat_rate / 100)
+    @property
+    def final_adjusted_amount(self): return self.adjusted_amount_excl_tax if self.adjusted_amount_excl_tax is not None else self.amount_excl_tax
     def __str__(self): return self.number
 
 class QuoteLine(TimestampedModel):
@@ -71,8 +74,13 @@ class QuoteLine(TimestampedModel):
     quantity = models.PositiveIntegerField(default=1)
     designation = models.CharField(max_length=255)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    adjusted_unit_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     @property
     def amount(self): return self.quantity * self.unit_price
+    @property
+    def final_unit_price(self): return self.adjusted_unit_price if self.adjusted_unit_price is not None else self.unit_price
+    @property
+    def final_amount(self): return self.quantity * self.final_unit_price
     def clean(self):
         if self.quantity <= 0:
             raise ValidationError({'quantity': 'La quantité doit être supérieure à zéro.'})
@@ -98,6 +106,14 @@ class Purchase(TimestampedModel):
         if self.project.quote.status != Quote.Status.APPROVED:
             raise ValidationError('Le devis doit être validé (APPROVED) avant tout achat.')
     def __str__(self): return self.reference
+
+class Expense(TimestampedModel):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='expenses')
+    description = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    date = models.DateField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    def __str__(self): return f'{self.description} - {self.amount}'
 
 class Site(TimestampedModel):
     class Status(models.TextChoices):
@@ -136,7 +152,7 @@ class ClosureReport(TimestampedModel):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='closure_report')
     summary = models.TextField()
     lessons_learned = models.TextField(blank=True)
-    final_cost = models.DecimalField(max_digits=14, decimal_places=2)
+    final_budget = models.DecimalField('Budget Final', max_digits=14, decimal_places=2, null=True, blank=True)
     delivered_on = models.DateField()
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     def clean(self):

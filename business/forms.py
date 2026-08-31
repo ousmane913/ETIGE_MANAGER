@@ -1,5 +1,5 @@
 from django import forms
-from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport
+from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport, Expense
 
 class DateInput(forms.DateInput): input_type = 'date'
 class MultipleFileInput(forms.ClearableFileInput): allow_multiple_selected = True
@@ -42,6 +42,12 @@ class SiteForm(forms.ModelForm):
 class ClosureReportForm(forms.ModelForm):
     photo_files = MultipleFileField(label='Photos du résultat final', required=False, widget=MultipleFileInput(attrs={'accept': 'image/*'}))
     class Meta:
-        model = ClosureReport; fields = ['summary', 'lessons_learned', 'final_cost', 'delivered_on']
+        model = ClosureReport; fields = ['summary', 'lessons_learned', 'final_budget', 'delivered_on']
         widgets = {'delivered_on': DateInput()}
-        labels = {'summary': 'Résumé', 'lessons_learned': 'Leçons apprises', 'final_cost': 'Coût final', 'delivered_on': 'Date de livraison'}
+        labels = {'summary': 'Résumé', 'lessons_learned': 'Leçons apprises', 'final_budget': 'Budget Final', 'delivered_on': 'Date de livraison'}
+
+class ExpenseForm(forms.ModelForm):
+    class Meta:
+        model = Expense; fields = ['description', 'amount', 'date']
+        widgets = {'date': DateInput()}
+        labels = {'description': 'Description', 'amount': 'Montant', 'date': 'Date de dépense'}
