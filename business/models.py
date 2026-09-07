@@ -44,7 +44,7 @@ class Project(TimestampedModel):
     address = models.TextField('Adresse')
     start_date = models.DateField('Date de début', null=True, blank=True)
     target_end_date = models.DateField('Échéance cible', null=True, blank=True)
-    budget = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    budget = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.SURVEY)
     manager = models.CharField('Manager', max_length=120, blank=True)
 
@@ -91,7 +91,7 @@ class Quote(TimestampedModel):
 class QuoteLine(TimestampedModel):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='lines')
     quantity = models.PositiveIntegerField(default=1)
-    unit = models.CharField('Unité', max_length=30, default='u', blank=True)
+    unit = models.CharField('Unité', max_length=30, blank=True)
     designation = models.CharField(max_length=255)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     adjusted_unit_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)

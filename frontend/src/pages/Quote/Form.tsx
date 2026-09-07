@@ -12,8 +12,8 @@ const COMMON_UNITS = [
 export default function QuoteForm({ title, subtitle, action, fields, errors, lines: initialLines, project }: any) {
     const initialFields = Object.fromEntries(fields.map((field: any) => [field.name, field.initial ?? '']))
     const normalizedInitialLines = initialLines?.length
-        ? initialLines.map((l: any) => ({ ...l, unit: l.unit || 'u' }))
-        : [{ quantity: '1', unit: 'u', designation: '', unitPrice: '' }]
+        ? initialLines
+        : [{ quantity: '1', unit: '', designation: '', unitPrice: '' }]
 
     const { data, setData, post, processing } = useForm({
         ...initialFields,
@@ -24,7 +24,7 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
     const updateLine = (index: number, key: string, value: string) =>
         setData('lines', data.lines.map((line: any, lineIndex: number) => (lineIndex === index ? { ...line, [key]: value } : line)))
     const addLine = () =>
-        setData('lines', [...data.lines, { quantity: '1', unit: 'u', designation: '', unitPrice: '' }])
+        setData('lines', [...data.lines, { quantity: '1', unit: '', designation: '', unitPrice: '' }])
     const removeLine = (index: number) =>
         setData('lines', data.lines.filter((_: any, lineIndex: number) => lineIndex !== index))
 
