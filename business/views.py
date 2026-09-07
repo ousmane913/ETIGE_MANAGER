@@ -2,17 +2,18 @@ import json
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import ValidationError, ObjectDoesNotExist
+from django.core.mail import EmailMessage
+from django.db import transaction, models
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
-from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm
-from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, Site, ClosureReport, ProjectPhoto, Expense
+from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm
+from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, Site, ClosureReport, ProjectPhoto, Expense, ProjectSchedule, PlanningTask, generate_next_project_number
 
 def errors(form): return {field: [str(error) for error in field_errors] for field, field_errors in form.errors.items()}
 def form_value(value):
@@ -72,12 +73,33 @@ def client_delete(request, client_id):
 
 @login_required
 def projects(request):
-    data = list(Project.objects.order_by('-created_at').values('id', 'reference', 'name', 'status', 'client', 'budget', 'target_end_date'))
-    return render(request, 'Projects/Index', {'projects': data, 'statuses': dict(Project.Status.choices)})
+    query = request.GET.get('q', '').strip()
+    qs = Project.objects.order_by('-created_at')
+    if query:
+        qs = qs.filter(
+            models.Q(project_number__icontains=query) |
+            models.Q(reference__icontains=query) |
+            models.Q(name__icontains=query) |
+            models.Q(client__icontains=query)
+        )
+    data = list(qs.values('id', 'project_number', 'reference', 'name', 'status', 'client', 'budget', 'target_end_date'))
+    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
+    is_dt = request.user.groups.filter(name='DT').exists()
+    return render(request, 'Projects/Index', {
+        'projects': data,
+        'statuses': dict(Project.Status.choices),
+        'searchQuery': query,
+        'isDg': is_dg,
+        'isDt': is_dt,
+    })
 
 @login_required
 @require_http_methods(['POST'])
 def project_delete(request, project_id):
+    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
+    if not is_dg:
+        messages.error(request, 'Seul le Directeur Général (DG) est habilité à supprimer un projet.')
+        return redirect('projects')
     project = get_object_or_404(Project, pk=project_id)
     project.delete()
     messages.success(request, 'Projet supprimé.')
@@ -86,33 +108,44 @@ def project_delete(request, project_id):
 @login_required
 @require_http_methods(['GET', 'POST'])
 def project_create(request):
-    form = ProjectForm(request.POST or None)
-    if not request.user.groups.filter(name__in=['DG', 'DT']).exists():
+    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
+    is_dt = request.user.groups.filter(name='DT').exists()
+    is_management = is_dg or is_dt
+    initial = {'project_number': generate_next_project_number()}
+    form = ProjectForm(request.POST or None, initial=initial)
+    if not is_management:
         if 'budget' in form.fields: del form.fields['budget']
     if request.method == 'POST' and form.is_valid():
         project = form.save(commit=False)
-        if not request.user.groups.filter(name__in=['DG', 'DT']).exists():
+        if not is_management:
             project.budget = 0
+        if not project.project_number:
+            project.project_number = generate_next_project_number()
         project.save()
-        messages.success(request, 'Projet créé : le Survey peut démarrer.')
+        messages.success(request, f'Projet {project.project_number} créé avec succès.')
         return redirect('project-detail', project.id)
-    return render(request, 'Shared/Form', form_props(form, 'Nouveau projet', '/projets/nouveau/', 'Le projet entre d’abord en phase Survey.'))
+    return render(request, 'Shared/Form', form_props(form, 'Nouveau projet', '/projets/nouveau/', 'Créez un projet avec son numéro ETIGE et sa référence client.'))
 
 @login_required
 @require_http_methods(['GET', 'POST'])
 def project_edit(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
+    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
+    is_dt = request.user.groups.filter(name='DT').exists()
+    if not is_dg:
+        messages.error(request, 'Seul le Directeur Général (DG) dispose des autorisations pour modifier le projet.')
+        return redirect('project-detail', project.id)
     form = ProjectForm(request.POST or None, instance=project)
-    if not request.user.groups.filter(name__in=['DG', 'DT']).exists():
-        if 'budget' in form.fields: del form.fields['budget']
     if request.method == 'POST' and form.is_valid():
         form.save()
         messages.success(request, 'Projet modifié.')
         return redirect('project-detail', project.id)
-    return render(request, 'Shared/Form', form_props(form, 'Modifier le projet', f'/projets/{project.id}/modifier/', 'Mettez à jour les informations générales du projet.'))
+    return render(request, 'Shared/Form', form_props(form, 'Modifier le projet', f'/projets/{project.id}/modifier/', f'Projet {project.project_number or project.reference} — {project.name}'))
 
 def _detail_props(request, project):
-    is_management = request.user.groups.filter(name__in=['DG', 'DT']).exists()
+    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
+    is_dt = request.user.groups.filter(name='DT').exists()
+    is_management = is_dg or is_dt
 
     total_purchases = sum(p.amount for p in project.purchases.all())
     total_expenses = sum(e.amount for e in project.expenses.all())
@@ -122,15 +155,28 @@ def _detail_props(request, project):
     report = related_or_none(project, 'closure_report')
     final_budget = report.final_budget if report and report.final_budget else None
     quote = related_or_none(project, 'quote')
+    schedule = related_or_none(project, 'schedule')
 
     profit = None
     if final_budget is not None:
         profit = float(final_budget) - float(final_cost)
 
+    client_obj = Client.objects.filter(company_name__iexact=project.client).first()
+    client_email = client_obj.email if client_obj else ''
+
     return {'project': {
-        'id': project.id, 'reference': project.reference, 'name': project.name, 'address': project.address, 'status': project.status,
-        'client': project.client, 'targetEndDate': project.target_end_date,
+        'id': project.id,
+        'projectNumber': project.project_number or project.reference,
+        'reference': project.reference,
+        'name': project.name,
+        'address': project.address,
+        'status': project.status,
+        'client': project.client,
+        'clientEmail': client_email,
+        'targetEndDate': project.target_end_date,
         'isManagement': is_management,
+        'isDg': is_dg,
+        'isDt': is_dt,
         'estimatedBudget': str(project.budget) if is_management and project.budget else None,
         'budget': str(final_budget) if is_management and final_budget else None,
         'finalCost': str(final_cost) if is_management else None,
@@ -141,7 +187,14 @@ def _detail_props(request, project):
             'amount': str(quote.amount_excl_tax),
             'adjustedAmount': str(quote.final_adjusted_amount) if is_management else None,
             'status': quote.status,
-            'lines': [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else None, 'amount': str(line.amount)} for line in quote.lines.all()]
+            'lines': [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else None, 'amount': str(line.amount)} for line in quote.lines.all()]
+        },
+        'schedule': schedule and {
+            'startDate': schedule.start_date,
+            'endDate': schedule.end_date,
+            'notes': schedule.notes,
+            'tasksCount': schedule.tasks.count(),
+            'completedTasksCount': schedule.tasks.filter(status='DONE').count(),
         },
         'purchases': list(project.purchases.values('reference', 'supplier', 'amount', 'status')),
         'expenses': list(project.expenses.values('description', 'amount', 'date', 'created_at')),
@@ -205,10 +258,10 @@ def survey_create(request, project_id):
 @require_http_methods(['GET', 'POST'])
 def quote_create(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    quote = related_or_none(project, 'quote') or Quote(project=project, number=project.reference)
+    quote = related_or_none(project, 'quote') or Quote(project=project, number=project.project_number or project.reference)
     form = QuoteForm(request.POST or None, instance=quote)
     is_management = request.user.groups.filter(name__in=['DG', 'DT']).exists()
-    lines = [{'quantity': str(line.quantity), 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else ''} for line in quote.lines.all()] if quote.pk else []
+    lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else ''} for line in quote.lines.all()] if quote.pk else []
     if request.method == 'POST':
         try:
             submitted_lines = json.loads(request.POST.get('lines', '[]'))
@@ -238,12 +291,13 @@ def quote_create(request, project_id):
                 if quantity != quantity.to_integral_value():
                     raise ValueError(f'La quantité de la ligne {index} doit être un nombre entier.')
                 
+                unit = str(raw_line.get('unit', 'u')).strip() or 'u'
                 unit_price = Decimal(str(raw_line['unitPrice']))
                 adjusted_unit_price = None
                 if request.user.groups.filter(name__in=['DG', 'DT']).exists() and 'adjustedUnitPrice' in raw_line and raw_line['adjustedUnitPrice']:
                     adjusted_unit_price = Decimal(str(raw_line['adjustedUnitPrice']))
 
-                parsed_lines.append(QuoteLine(quantity=int(quantity), designation=str(raw_line['designation']).strip(), unit_price=unit_price, adjusted_unit_price=adjusted_unit_price))
+                parsed_lines.append(QuoteLine(quantity=int(quantity), unit=unit, designation=str(raw_line['designation']).strip(), unit_price=unit_price, adjusted_unit_price=adjusted_unit_price))
             if not parsed_lines:
                 raise ValueError('Ajoutez au moins une ligne au devis.')
             total = sum((line.quantity * line.unit_price for line in parsed_lines), Decimal('0'))
@@ -267,6 +321,10 @@ def quote_create(request, project_id):
                     purchase.amount = record.amount_excl_tax
                     purchase.save()
 
+                if project.status == Project.Status.SURVEY:
+                    project.status = Project.Status.QUOTATION
+                    project.save()
+
                 if record.status == Quote.Status.APPROVED:
                     project.status = Project.Status.PURCHASE
                     project.save()
@@ -283,17 +341,28 @@ def quote_create(request, project_id):
             for field_error in field_errors:
                 if field_name != '__all__':
                     form.add_error(None, f'{form.fields[field_name].label if field_name in form.fields else field_name} : {field_error}')
-    return render(request, 'Quote/Form', {'title': 'Devis', 'subtitle': f'Projet {project.reference} — {project.name}', 'action': f'/projets/{project.id}/devis/', 'fields': form_props(form, 'Devis', '', '')['fields'], 'errors': form_props(form, 'Devis', '', '')['errors'], 'lines': lines, 'is_management': is_management})
+    return render(request, 'Quote/Form', {
+        'title': 'Devis',
+        'subtitle': f'N° {project.project_number or project.reference} — Réf {project.reference} — Client {project.client}',
+        'action': f'/projets/{project.id}/devis/',
+        'fields': form_props(form, 'Devis', '', '')['fields'],
+        'errors': form_props(form, 'Devis', '', '')['errors'],
+        'lines': lines,
+        'is_management': is_management,
+        'project': {
+            'id': project.id,
+            'name': project.name,
+            'projectNumber': project.project_number or project.reference,
+            'reference': project.reference,
+            'client': project.client,
+        }
+    })
 
-@login_required
-@require_http_methods(['GET'])
-def quote_pdf(request, project_id):
+def _build_quote_pdf_bytes(project, quote):
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import mm
 
-    project = get_object_or_404(Project, pk=project_id)
-    quote = get_object_or_404(Quote, project=project)
     buffer = BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -301,20 +370,25 @@ def quote_pdf(request, project_id):
     pdf.setFont('Helvetica-Bold', 16)
     pdf.drawString(20 * mm, y, 'DEVIS')
     pdf.setFont('Helvetica', 10)
-    y -= 10 * mm
-    pdf.drawString(20 * mm, y, f'Projet : {project.name}')
+    y -= 8 * mm
+    pdf.drawString(20 * mm, y, f'N° Projet ETIGE : {project.project_number or "-"}')
+    y -= 5 * mm
+    pdf.drawString(20 * mm, y, f'Reference Client : {project.reference}')
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Client : {project.client}')
     y -= 5 * mm
-    pdf.drawString(20 * mm, y, f'Reference : {quote.number}')
-    y -= 12 * mm
+    pdf.drawString(20 * mm, y, f'Nom du projet : {project.name}')
+    y -= 5 * mm
+    pdf.drawString(20 * mm, y, f'Numero de devis : {quote.number}')
+    y -= 8 * mm
     pdf.drawString(20 * mm, y, f'Date de validite : {quote.validity_date.strftime("%d/%m/%Y") if quote.validity_date else "Non indiquee"}')
-    y -= 12 * mm
+    y -= 10 * mm
     pdf.setFont('Helvetica-Bold', 10)
     pdf.drawString(20 * mm, y, 'Qte')
-    pdf.drawString(40 * mm, y, 'Designation')
-    pdf.drawString(125 * mm, y, 'Prix unitaire')
-    pdf.drawString(165 * mm, y, 'Montant')
+    pdf.drawString(34 * mm, y, 'Unite')
+    pdf.drawString(52 * mm, y, 'Designation')
+    pdf.drawRightString(150 * mm, y, 'Prix unitaire')
+    pdf.drawRightString(195 * mm, y, 'Montant')
     y -= 6 * mm
     pdf.setFont('Helvetica', 9)
     for line in quote.lines.all():
@@ -322,16 +396,220 @@ def quote_pdf(request, project_id):
             pdf.showPage()
             y = height - 20 * mm
         pdf.drawString(20 * mm, y, str(line.quantity))
-        pdf.drawString(40 * mm, y, line.designation[:48])
-        pdf.drawRightString(155 * mm, y, f'{line.final_unit_price:,.2f} FCFA')
+        pdf.drawString(34 * mm, y, str(line.unit or 'u')[:8])
+        pdf.drawString(52 * mm, y, line.designation[:38])
+        pdf.drawRightString(150 * mm, y, f'{line.final_unit_price:,.2f} FCFA')
         pdf.drawRightString(195 * mm, y, f'{line.final_amount:,.2f} FCFA')
         y -= 5 * mm
     y -= 5 * mm
     pdf.setFont('Helvetica-Bold', 10)
     pdf.drawRightString(195 * mm, y, f'Montant : {quote.final_adjusted_amount:,.2f} FCFA')
     pdf.save()
-    response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+    return buffer.getvalue()
+
+@login_required
+@require_http_methods(['GET'])
+def quote_pdf(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    quote = get_object_or_404(Quote, project=project)
+    pdf_data = _build_quote_pdf_bytes(project, quote)
+    response = HttpResponse(pdf_data, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="devis-{quote.number}.pdf"'
+    return response
+
+@login_required
+@require_http_methods(['POST'])
+def quote_send_email(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    quote = get_object_or_404(Quote, project=project)
+    
+    recipient_email = request.POST.get('email', '').strip()
+    if not recipient_email:
+        client_obj = Client.objects.filter(company_name__iexact=project.client).first()
+        if client_obj and client_obj.email:
+            recipient_email = client_obj.email
+
+    if not recipient_email:
+        messages.error(request, 'Veuillez renseigner une adresse email pour le client.')
+        return redirect('project-detail', project.id)
+
+    try:
+        pdf_data = _build_quote_pdf_bytes(project, quote)
+        subject = f"ETIGE - Devis {quote.number} - {project.name}"
+        body = (
+            f"Bonjour,\n\n"
+            f"Veuillez trouver ci-joint le devis N° {quote.number} relatif au projet « {project.name} ».\n"
+            f"• Numéro de projet ETIGE : {project.project_number or '-'}\n"
+            f"• Référence client : {project.reference}\n"
+            f"• Montant total : {quote.final_adjusted_amount:,.2f} FCFA\n\n"
+            f"Restant à votre entière disposition pour tout complément d'information.\n\n"
+            f"Cordialement,\n"
+            f"L'équipe ETIGE\n"
+        )
+        email = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email],
+        )
+        email.attach(f"devis-{quote.number}.pdf", pdf_data, 'application/pdf')
+        email.send(fail_silently=False)
+
+        if quote.status == Quote.Status.DRAFT:
+            quote.status = Quote.Status.SENT
+            quote.save()
+
+        messages.success(request, f'Devis envoyé avec succès à {recipient_email}.')
+    except Exception as exc:
+        messages.error(request, f"Erreur lors de l'envoi de l'email : {exc}")
+
+    return redirect('project-detail', project.id)
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def project_planning(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
+    is_dt = request.user.groups.filter(name='DT').exists()
+    schedule, _ = ProjectSchedule.objects.get_or_create(project=project)
+
+    if request.method == 'POST':
+        schedule.start_date = request.POST.get('start_date') or None
+        schedule.end_date = request.POST.get('end_date') or None
+        schedule.notes = request.POST.get('notes', '')
+        schedule.save()
+
+        raw_tasks = request.POST.get('tasks', '[]')
+        try:
+            if isinstance(raw_tasks, str):
+                tasks_data = json.loads(raw_tasks)
+            else:
+                tasks_data = raw_tasks
+            if isinstance(tasks_data, list):
+                schedule.tasks.all().delete()
+                new_tasks = []
+                for t in tasks_data:
+                    if isinstance(t, dict) and str(t.get('name', '')).strip():
+                        new_tasks.append(PlanningTask(
+                            schedule=schedule,
+                            name=str(t.get('name', '')).strip(),
+                            description=str(t.get('description', '')).strip(),
+                            start_date=t.get('startDate') or t.get('start_date') or None,
+                            end_date=t.get('endDate') or t.get('end_date') or None,
+                            assigned_to=str(t.get('assignedTo') or t.get('assigned_to') or '').strip(),
+                            status=t.get('status') or 'TODO'
+                        ))
+                PlanningTask.objects.bulk_create(new_tasks)
+            messages.success(request, 'Planning enregistré avec succès.')
+            return redirect('project-detail', project.id)
+        except Exception as exc:
+            messages.error(request, f'Erreur lors de l’enregistrement des phases : {exc}')
+
+    return render(request, 'Projects/Planning', {
+        'project': {
+            'id': project.id,
+            'name': project.name,
+            'projectNumber': project.project_number or project.reference,
+            'reference': project.reference,
+            'client': project.client,
+        },
+        'schedule': {
+            'startDate': schedule.start_date.isoformat() if schedule.start_date else '',
+            'endDate': schedule.end_date.isoformat() if schedule.end_date else '',
+            'durationDays': schedule.duration_days,
+            'notes': schedule.notes,
+        },
+        'tasks': [{
+            'name': t.name,
+            'description': t.description,
+            'startDate': t.start_date.isoformat() if t.start_date else '',
+            'endDate': t.end_date.isoformat() if t.end_date else '',
+            'durationDays': t.duration_days,
+            'assignedTo': t.assigned_to,
+            'status': t.status
+        } for t in schedule.tasks.all()],
+        'statusChoices': list(PlanningTask.Status.choices),
+        'isDg': is_dg,
+        'isDt': is_dt,
+    })
+
+@login_required
+@require_http_methods(['GET'])
+def planning_pdf(request, project_id):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+
+    project = get_object_or_404(Project, pk=project_id)
+    schedule = related_or_none(project, 'schedule')
+    if not schedule:
+        messages.error(request, 'Le planning n’a pas encore été établi pour ce projet.')
+        return redirect('project-detail', project.id)
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    y = height - 25 * mm
+
+    # En-tête officiel ETIGE
+    pdf.setFont('Helvetica-Bold', 16)
+    pdf.drawString(20 * mm, y, 'PLANNING PREVISIONNEL D’EXECUTION')
+    pdf.setFont('Helvetica', 10)
+    y -= 8 * mm
+    pdf.drawString(20 * mm, y, f'N° Projet ETIGE : {project.project_number or "-"}')
+    y -= 5 * mm
+    pdf.drawString(20 * mm, y, f'Reference Client : {project.reference}')
+    y -= 5 * mm
+    pdf.drawString(20 * mm, y, f'Client : {project.client}')
+    y -= 5 * mm
+    pdf.drawString(20 * mm, y, f'Nom du projet : {project.name}')
+    y -= 5 * mm
+    start_str = schedule.start_date.strftime("%d/%m/%Y") if schedule.start_date else "Non definie"
+    end_str = schedule.end_date.strftime("%d/%m/%Y") if schedule.end_date else "Non definie"
+    duration_str = f" ({schedule.duration_days} jours)" if schedule.duration_days else ""
+    pdf.drawString(20 * mm, y, f'Periode globale prevue : Du {start_str} au {end_str}{duration_str}')
+
+    if schedule.notes:
+        y -= 6 * mm
+        pdf.setFont('Helvetica-Oblique', 9)
+        pdf.drawString(20 * mm, y, f'Notes : {schedule.notes[:90]}')
+
+    y -= 10 * mm
+    # Tableau des phases / déroulement
+    pdf.setFont('Helvetica-Bold', 10)
+    pdf.drawString(20 * mm, y, 'Phase / Etape')
+    pdf.drawString(65 * mm, y, 'Deroulement & Operations')
+    pdf.drawString(130 * mm, y, 'Dates prevues')
+    pdf.drawString(168 * mm, y, 'Resp.')
+    pdf.drawString(185 * mm, y, 'Statut')
+    y -= 3 * mm
+    pdf.line(20 * mm, y, 195 * mm, y)
+    y -= 6 * mm
+
+    pdf.setFont('Helvetica', 9)
+    status_map = {'TODO': 'A faire', 'IN_PROGRESS': 'En cours', 'DONE': 'Termine'}
+    tasks = schedule.tasks.all()
+
+    for index, task in enumerate(tasks, start=1):
+        if y < 25 * mm:
+            pdf.showPage()
+            y = height - 20 * mm
+        t_start = task.start_date.strftime("%d/%m/%Y") if task.start_date else "-"
+        t_end = task.end_date.strftime("%d/%m/%Y") if task.end_date else "-"
+        t_duration = f" ({task.duration_days}j)" if task.duration_days else ""
+
+        pdf.setFont('Helvetica-Bold', 9)
+        pdf.drawString(20 * mm, y, f'{index}. {task.name[:22]}')
+        pdf.setFont('Helvetica', 8)
+        pdf.drawString(65 * mm, y, task.description[:38] if task.description else "-")
+        pdf.drawString(130 * mm, y, f'{t_start} -> {t_end}{t_duration}')
+        pdf.drawString(168 * mm, y, (task.assigned_to or "-")[:10])
+        pdf.drawString(185 * mm, y, status_map.get(task.status, task.status))
+        y -= 6 * mm
+
+    pdf.save()
+    response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="planning-{project.project_number or project.reference}.pdf"'
     return response
 
 @login_required

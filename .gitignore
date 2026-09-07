@@ -138,3 +138,5 @@ Thumbs.db
 
 # Other project-specific exclusions
 btp-manager-src.zip
+staticfiles/
+media/

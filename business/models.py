@@ -17,6 +17,19 @@ class Client(TimestampedModel):
     address = models.TextField(blank=True)
     def __str__(self): return self.company_name
 
+def generate_next_project_number():
+    """Génère le prochain numéro de projet automatique ETIGE (ex: PRJ-001, PRJ-002)."""
+    import re
+    max_num = 0
+    for p in Project.objects.exclude(project_number=''):
+        match = re.search(r'(\d+)', p.project_number or '')
+        if match:
+            num = int(match.group(1))
+            if num > max_num:
+                max_num = num
+    next_num = max_num + 1 if max_num > 0 else (Project.objects.count() + 1)
+    return f'PRJ-{next_num:03d}'
+
 class Project(TimestampedModel):
     class Status(models.TextChoices):
         SURVEY = 'SURVEY', 'Survey'
@@ -24,16 +37,23 @@ class Project(TimestampedModel):
         PURCHASE = 'PURCHASE', 'Achats'
         SITE = 'SITE', 'Chantier'
         CLOSED = 'CLOSED', 'Clôturé'
-    reference = models.CharField(max_length=32, unique=True)
-    name = models.CharField(max_length=180)
+    reference = models.CharField('Référence client', max_length=32)
+    project_number = models.CharField('Numéro de projet (ETIGE)', max_length=64, unique=True, null=True, blank=True)
+    name = models.CharField('Nom du projet', max_length=180)
     client = models.CharField('Client', max_length=180)
-    address = models.TextField()
+    address = models.TextField('Adresse')
     start_date = models.DateField('Date de début', null=True, blank=True)
     target_end_date = models.DateField('Échéance cible', null=True, blank=True)
     budget = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.SURVEY)
     manager = models.CharField('Manager', max_length=120, blank=True)
-    def __str__(self): return f'{self.reference} — {self.name}'
+
+    def save(self, *args, **kwargs):
+        if not self.project_number:
+            self.project_number = generate_next_project_number()
+        super().save(*args, **kwargs)
+
+    def __str__(self): return f'{self.project_number} — {self.reference} — {self.name}'
 
 class Survey(TimestampedModel):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='survey')
@@ -42,7 +62,7 @@ class Survey(TimestampedModel):
     technical_notes = models.TextField('notes techniques', blank=True)
     completed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     is_validated = models.BooleanField(default=False)
-    def __str__(self): return f'Survey {self.project.reference}'
+    def __str__(self): return f'Survey {self.project.project_number or self.project.reference}'
 
 class Quote(TimestampedModel):
     class Status(models.TextChoices):
@@ -59,10 +79,9 @@ class Quote(TimestampedModel):
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
     notes = models.TextField(blank=True)
     def clean(self):
-        if not hasattr(self.project, 'survey'):
-            raise ValidationError('Le Survey doit être créé avant la création du devis.')
-        if not self.project.survey.is_validated:
-            raise ValidationError('Le Survey doit être validé avant la création du devis.')
+        # Le Survey n'est plus obligatoire. S'il existe et a été initié, il doit être validé.
+        if hasattr(self.project, 'survey') and self.project.survey.pk and not self.project.survey.is_validated:
+            raise ValidationError('Le Survey existant doit être validé avant la validation du devis.')
     @property
     def amount_incl_tax(self): return self.amount_excl_tax * (1 + self.vat_rate / 100)
     @property
@@ -72,6 +91,7 @@ class Quote(TimestampedModel):
 class QuoteLine(TimestampedModel):
     quote = models.ForeignKey(Quote, on_delete=models.CASCADE, related_name='lines')
     quantity = models.PositiveIntegerField(default=1)
+    unit = models.CharField('Unité', max_length=30, default='u', blank=True)
     designation = models.CharField(max_length=255)
     unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     adjusted_unit_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
@@ -86,6 +106,46 @@ class QuoteLine(TimestampedModel):
             raise ValidationError({'quantity': 'La quantité doit être supérieure à zéro.'})
         if self.unit_price < Decimal('0'):
             raise ValidationError({'unit_price': 'Le prix unitaire ne peut pas être négatif.'})
+
+class ProjectSchedule(TimestampedModel):
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='schedule')
+    start_date = models.DateField('Date de début', null=True, blank=True)
+    end_date = models.DateField('Date de fin', null=True, blank=True)
+    notes = models.TextField('Notes / Objectifs généraux', blank=True)
+
+    @property
+    def duration_days(self):
+        if self.start_date and self.end_date:
+            delta = (self.end_date - self.start_date).days + 1
+            return max(delta, 1)
+        return None
+
+    def __str__(self):
+        return f'Planning {self.project.project_number or self.project.reference}'
+
+class PlanningTask(TimestampedModel):
+    class Status(models.TextChoices):
+        TODO = 'TODO', 'À faire'
+        IN_PROGRESS = 'IN_PROGRESS', 'En cours'
+        DONE = 'DONE', 'Terminé'
+
+    schedule = models.ForeignKey(ProjectSchedule, on_delete=models.CASCADE, related_name='tasks')
+    name = models.CharField('Phase / Étape', max_length=255)
+    description = models.TextField('Déroulement / Détails des opérations', blank=True)
+    start_date = models.DateField('Date de début', null=True, blank=True)
+    end_date = models.DateField('Date de fin', null=True, blank=True)
+    assigned_to = models.CharField('Responsable / Équipe', max_length=120, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.TODO)
+
+    @property
+    def duration_days(self):
+        if self.start_date and self.end_date:
+            delta = (self.end_date - self.start_date).days + 1
+            return max(delta, 1)
+        return None
+
+    def __str__(self):
+        return f'{self.name} ({self.get_status_display()})'
 
 class Purchase(TimestampedModel):
     class Status(models.TextChoices):

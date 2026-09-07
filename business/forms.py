@@ -1,5 +1,5 @@
 from django import forms
-from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport, Expense
+from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport, Expense, ProjectSchedule, PlanningTask, generate_next_project_number
 
 class DateInput(forms.DateInput): input_type = 'date'
 class MultipleFileInput(forms.ClearableFileInput): allow_multiple_selected = True
@@ -14,10 +14,28 @@ class ClientForm(forms.ModelForm):
         model = Client; fields = ['company_name', 'contact_name', 'email', 'phone', 'address']
         labels = {'company_name': 'Raison sociale', 'contact_name': 'Nom du contact', 'email': 'Email', 'phone': 'Téléphone', 'address': 'Adresse'}
 class ProjectForm(forms.ModelForm):
+    project_number = forms.CharField(label='Numéro du projet (ETIGE)', required=False, help_text='Incrémenté automatiquement par défaut.')
     class Meta:
-        model = Project; fields = ['reference', 'name', 'client', 'address', 'start_date', 'target_end_date', 'budget', 'manager']
+        model = Project; fields = ['reference', 'project_number', 'name', 'client', 'address', 'start_date', 'target_end_date', 'budget', 'manager']
         widgets = {'start_date': DateInput(), 'target_end_date': DateInput()}
-        labels = {'reference': 'Référence', 'name': 'Nom du projet', 'client': 'Client', 'address': 'Adresse', 'start_date': 'Date de début', 'target_end_date': 'Échéance cible', 'budget': 'Estimation du budget', 'manager': 'Manager'}
+        labels = {
+            'reference': 'Référence (donnée par le client)',
+            'project_number': 'Numéro du projet (ETIGE)',
+            'name': 'Nom du projet',
+            'client': 'Client',
+            'address': 'Adresse',
+            'start_date': 'Date de début',
+            'target_end_date': 'Échéance cible',
+            'budget': 'Estimation du budget',
+            'manager': 'Manager'
+        }
+
+class ProjectScheduleForm(forms.ModelForm):
+    class Meta:
+        model = ProjectSchedule
+        fields = ['start_date', 'end_date', 'notes']
+        widgets = {'start_date': DateInput(), 'end_date': DateInput()}
+        labels = {'start_date': 'Date de début prévisionnelle', 'end_date': 'Date de fin prévisionnelle', 'notes': 'Objectifs et notes'}
 class SurveyForm(forms.ModelForm):
     photo_files = MultipleFileField(label='Photos du site', required=False, widget=MultipleFileInput(attrs={'accept': 'image/*'}))
     class Meta:
