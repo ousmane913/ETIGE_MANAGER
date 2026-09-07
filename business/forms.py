@@ -14,13 +14,13 @@ class ClientForm(forms.ModelForm):
         model = Client; fields = ['company_name', 'contact_name', 'email', 'phone', 'address']
         labels = {'company_name': 'Raison sociale', 'contact_name': 'Nom du contact', 'email': 'Email', 'phone': 'Téléphone', 'address': 'Adresse'}
 class ProjectForm(forms.ModelForm):
-    project_number = forms.CharField(label='Numéro du projet (ETIGE)', required=False, help_text='Incrémenté automatiquement par défaut.')
+    project_number = forms.CharField(label='Numéro du projet', required=False, help_text='Incrémenté automatiquement par défaut.')
     class Meta:
         model = Project; fields = ['reference', 'project_number', 'name', 'client', 'address', 'start_date', 'target_end_date', 'budget', 'manager']
         widgets = {'start_date': DateInput(), 'target_end_date': DateInput()}
         labels = {
-            'reference': 'Référence (donnée par le client)',
-            'project_number': 'Numéro du projet (ETIGE)',
+            'reference': 'Référence client',
+            'project_number': 'Numéro du projet',
             'name': 'Nom du projet',
             'client': 'Client',
             'address': 'Adresse',
