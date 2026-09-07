@@ -1,10 +1,7 @@
 import AppLayout from '../../layouts/AppLayout'
 import { useForm } from '@inertiajs/react'
 
-function amount(line: any, isManagement: boolean) {
-    if (isManagement && line.adjustedUnitPrice) {
-        return Number(line.quantity || 0) * Number(line.adjustedUnitPrice);
-    }
+function amount(line: any) {
     return Number(line.quantity || 0) * Number(line.unitPrice || 0)
 }
 
@@ -12,22 +9,22 @@ const COMMON_UNITS = [
     'u', 'm', 'cm', 'm²', 'm³', 'ens', 'kg', 'tonne', 'forfait', 'j', 'h', 'litre'
 ]
 
-export default function QuoteForm({ title, subtitle, action, fields, errors, lines: initialLines, is_management, project }: any) {
+export default function QuoteForm({ title, subtitle, action, fields, errors, lines: initialLines, project }: any) {
     const initialFields = Object.fromEntries(fields.map((field: any) => [field.name, field.initial ?? '']))
     const normalizedInitialLines = initialLines?.length
         ? initialLines.map((l: any) => ({ ...l, unit: l.unit || 'u' }))
-        : [{ quantity: '1', unit: 'u', designation: '', unitPrice: '', adjustedUnitPrice: '' }]
+        : [{ quantity: '1', unit: 'u', designation: '', unitPrice: '' }]
 
     const { data, setData, post, processing } = useForm({
         ...initialFields,
         lines: normalizedInitialLines
     })
 
-    const total = data.lines.reduce((sum: number, line: any) => sum + amount(line, is_management), 0)
+    const total = data.lines.reduce((sum: number, line: any) => sum + amount(line), 0)
     const updateLine = (index: number, key: string, value: string) =>
         setData('lines', data.lines.map((line: any, lineIndex: number) => (lineIndex === index ? { ...line, [key]: value } : line)))
     const addLine = () =>
-        setData('lines', [...data.lines, { quantity: '1', unit: 'u', designation: '', unitPrice: '', adjustedUnitPrice: '' }])
+        setData('lines', [...data.lines, { quantity: '1', unit: 'u', designation: '', unitPrice: '' }])
     const removeLine = (index: number) =>
         setData('lines', data.lines.filter((_: any, lineIndex: number) => lineIndex !== index))
 
@@ -119,8 +116,7 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                                     <th className="p-3 w-24">Quantité</th>
                                     <th className="p-3 w-28">Unité</th>
                                     <th className="p-3">Désignation</th>
-                                    <th className="p-3 w-36">Prix unitaire (Tech)</th>
-                                    {is_management && <th className="p-3 w-36 text-amber-700">Prix unitaire (Client)</th>}
+                                    <th className="p-3 w-40">Prix unitaire</th>
                                     <th className="p-3 text-right w-36">Montant</th>
                                     <th className="p-3 w-16"></th>
                                 </tr>
@@ -165,26 +161,14 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                                                 type="number"
                                                 min="0.01"
                                                 step="0.01"
+                                                placeholder="Prix unitaire"
                                                 value={line.unitPrice}
                                                 onChange={(e) => updateLine(index, 'unitPrice', e.target.value)}
                                                 required
                                             />
                                         </td>
-                                        {is_management && (
-                                            <td className="p-2">
-                                                <input
-                                                    className="input mt-0 w-full border-amber-300 focus:border-amber-500"
-                                                    type="number"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    value={line.adjustedUnitPrice || ''}
-                                                    onChange={(e) => updateLine(index, 'adjustedUnitPrice', e.target.value)}
-                                                    placeholder="Lui-même par défaut"
-                                                />
-                                            </td>
-                                        )}
                                         <td className="p-3 text-right font-semibold whitespace-nowrap">
-                                            {amount(line, is_management).toLocaleString('fr-FR')} FCFA
+                                            {amount(line).toLocaleString('fr-FR')} FCFA
                                         </td>
                                         <td className="p-2 text-right">
                                             <button

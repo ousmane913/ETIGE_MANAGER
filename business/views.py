@@ -261,7 +261,7 @@ def quote_create(request, project_id):
     quote = related_or_none(project, 'quote') or Quote(project=project, number=project.project_number or project.reference)
     form = QuoteForm(request.POST or None, instance=quote)
     is_management = request.user.groups.filter(name__in=['DG', 'DT']).exists()
-    lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else ''} for line in quote.lines.all()] if quote.pk else []
+    lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
     if request.method == 'POST':
         try:
             submitted_lines = json.loads(request.POST.get('lines', '[]'))
@@ -293,20 +293,15 @@ def quote_create(request, project_id):
                 
                 unit = str(raw_line.get('unit', 'u')).strip() or 'u'
                 unit_price = Decimal(str(raw_line['unitPrice']))
-                adjusted_unit_price = None
-                if request.user.groups.filter(name__in=['DG', 'DT']).exists() and 'adjustedUnitPrice' in raw_line and raw_line['adjustedUnitPrice']:
-                    adjusted_unit_price = Decimal(str(raw_line['adjustedUnitPrice']))
 
-                parsed_lines.append(QuoteLine(quantity=int(quantity), unit=unit, designation=str(raw_line['designation']).strip(), unit_price=unit_price, adjusted_unit_price=adjusted_unit_price))
+                parsed_lines.append(QuoteLine(quantity=int(quantity), unit=unit, designation=str(raw_line['designation']).strip(), unit_price=unit_price, adjusted_unit_price=unit_price))
             if not parsed_lines:
                 raise ValueError('Ajoutez au moins une ligne au devis.')
             total = sum((line.quantity * line.unit_price for line in parsed_lines), Decimal('0'))
-            adjusted_total = sum((line.quantity * line.final_unit_price for line in parsed_lines), Decimal('0'))
             with transaction.atomic():
                 record = form.save(commit=False)
                 record.amount_excl_tax = total
-                if request.user.groups.filter(name__in=['DG', 'DT']).exists():
-                    record.adjusted_amount_excl_tax = adjusted_total
+                record.adjusted_amount_excl_tax = total
                 record.full_clean()
                 record.save()
                 record.lines.all().delete()
