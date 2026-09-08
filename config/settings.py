@@ -26,6 +26,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'core.middleware.JsonRequestMiddleware',
+    'core.middleware.FlashMessagesMiddleware',
     'inertia.middleware.InertiaMiddleware',
 ]
 ROOT_URLCONF = 'config.urls'
