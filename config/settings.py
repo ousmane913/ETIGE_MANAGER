@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import dj_database_url
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
@@ -41,11 +42,18 @@ DATABASES = {'default': {
     'USER': os.getenv('POSTGRES_USER', 'btp_user'), 'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'btp_password'),
     'HOST': os.getenv('POSTGRES_HOST', '127.0.0.1'), 'PORT': os.getenv('POSTGRES_PORT', '5432'),
 }}
-if os.getenv('DATABASE_URL'):
-    ssl_require = not DEBUG
-    if os.getenv('DISABLE_DATABASE_SSL', 'False').lower() == 'true':
-        ssl_require = False
-    DATABASES['default'] = dj_database_url.parse(os.environ['DATABASE_URL'], conn_max_age=600, ssl_require=ssl_require)
+if 'test' in sys.argv:
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:',
+    }
+else:
+    if os.getenv('DATABASE_URL'):
+        ssl_require = not DEBUG
+        if os.getenv('DISABLE_DATABASE_SSL', 'False').lower() == 'true':
+            ssl_require = False
+        DATABASES['default'] = dj_database_url.parse(os.environ['DATABASE_URL'], conn_max_age=600, ssl_require=ssl_require)
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

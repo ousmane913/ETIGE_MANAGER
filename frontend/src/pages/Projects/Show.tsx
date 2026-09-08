@@ -36,7 +36,7 @@ function Step({ title, done, href, text, pdfHref, onSendEmail, quoteExists, plan
                         onClick={onSendEmail}
                         className="text-sm font-semibold text-blue-700 hover:text-blue-900"
                     >
-                        ✉️ Envoyer au client par mail
+                        ✉️ Envoyer au client
                     </button>
                 )}
             </div>
