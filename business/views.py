@@ -416,8 +416,12 @@ def quote_pdf(request, project_id):
 @require_http_methods(['POST'])
 def quote_send_email(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    quote = get_object_or_404(Quote, project=project)
-    
+    # Try to fetch an existing Quote; if none exists, inform the user
+    quote = Quote.objects.filter(project=project).first()
+    if not quote:
+        messages.error(request, 'Aucun devis trouvé pour ce projet. Veuillez d’abord créer un devis.')
+        return redirect('project-detail', project.id)
+
     recipient_email = request.POST.get('email', '').strip()
     if not recipient_email:
         client_obj = Client.objects.filter(company_name__iexact=project.client).first()
