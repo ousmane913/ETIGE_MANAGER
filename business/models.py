@@ -66,9 +66,7 @@ class Survey(TimestampedModel):
 
 class Quote(TimestampedModel):
     class Status(models.TextChoices):
-        DRAFT = 'DRAFT', 'Brouillon'
         SENT = 'SENT', 'Envoyé'
-        APPROVED = 'APPROVED', 'Validé'
         REJECTED = 'REJECTED', 'Refusé'
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='quote')
     number = models.CharField(max_length=40)
@@ -76,7 +74,7 @@ class Quote(TimestampedModel):
     adjusted_amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18)
     validity_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.SENT)
     notes = models.TextField(blank=True)
     def clean(self):
         # Le Survey n'est plus obligatoire. S'il existe et a été initié, il doit être validé.
@@ -149,7 +147,6 @@ class PlanningTask(TimestampedModel):
 
 class Purchase(TimestampedModel):
     class Status(models.TextChoices):
-        DRAFT = 'DRAFT', 'Brouillon'
         ORDERED = 'ORDERED', 'Commandé'
         RECEIVED = 'RECEIVED', 'Reçu'
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='purchases')
@@ -157,14 +154,14 @@ class Purchase(TimestampedModel):
     supplier = models.CharField(max_length=180)
     description = models.TextField()
     amount = models.DecimalField(max_digits=14, decimal_places=2)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.DRAFT)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.ORDERED)
     ordered_on = models.DateField(null=True, blank=True)
     delivered_on = models.DateField(null=True, blank=True)
     def clean(self):
         if not hasattr(self.project, 'quote'):
             raise ValidationError('Le devis doit être créé avant tout achat.')
-        if self.project.quote.status != Quote.Status.APPROVED:
-            raise ValidationError('Le devis doit être validé (APPROVED) avant tout achat.')
+        if self.project.quote.status == Quote.Status.REJECTED:
+            raise ValidationError('Le devis ne doit pas être refusé (REJECTED) pour pouvoir créer un achat.')
     def __str__(self): return self.reference
 
 class Expense(TimestampedModel):

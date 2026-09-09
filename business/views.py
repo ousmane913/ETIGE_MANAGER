@@ -320,7 +320,7 @@ def quote_create(request, project_id):
                     project.status = Project.Status.QUOTATION
                     project.save()
 
-                if record.status == Quote.Status.APPROVED:
+                if record.status == Quote.Status.SENT:
                     project.status = Project.Status.PURCHASE
                     project.save()
             messages.success(request, 'Devis enregistré.')
@@ -454,9 +454,7 @@ def quote_send_email(request, project_id):
         email.attach(f"devis-{quote.number}.pdf", pdf_data, 'application/pdf')
         email.send(fail_silently=False)
 
-        if quote.status == Quote.Status.DRAFT:
-            quote.status = Quote.Status.SENT
-            quote.save()
+
 
         messages.success(request, f'Devis envoyé avec succès à {recipient_email}.')
     except Exception as exc:
