@@ -190,9 +190,9 @@ export default function Show({ project }: any) {
                         />
                         <Step
                             title="2. Devis"
-                            done={quote?.status === 'APPROVED'}
+                            done={quote?.status === 'SENT' || quote?.status === 'APPROVED'}
                             href={`/projets/${project.id}/devis/`}
-                            text={quote ? `${quote.number} — ${quote.status === 'APPROVED' ? 'validé' : (quote.status === 'SENT' ? 'envoyé au client' : 'à valider')}` : 'Chiffrage avec gestion des unités (accessible directement).'}
+                            text={quote ? `${quote.number} — ${quote.status === 'REJECTED' ? 'refusé' : 'envoyé au client'}` : 'Chiffrage avec gestion des unités (accessible directement).'}
                             quoteExists={!!quote}
                             onSendEmail={() => setEmailModalOpen(true)}
                         />
