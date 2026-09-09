@@ -31,5 +31,5 @@ class FlashMessagesMiddleware:
     def __call__(self, request):
         def get_flash():
             return [{'message': m.message, 'level': m.tags} for m in messages.get_messages(request)]
-        share(request, 'flash', lambda: {'messages': get_flash()})
+        share(request, flash=lambda: {'messages': get_flash()})
         return self.get_response(request)
