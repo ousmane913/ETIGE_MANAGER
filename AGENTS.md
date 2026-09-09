@@ -5,7 +5,7 @@
 - Application de gestion de projets BTP en Django 5.1–5.2, PostgreSQL, React 18, Inertia.js, Vite et Tailwind.
 - Le backend Django possède les règles métier, l’authentification, les formulaires et les transitions du workflow.
 - Le frontend React rend les pages Inertia et soumet les formulaires avec `useForm`.
-- Le flux métier est : `Survey valide -> devis approuve -> achat recu -> chantier termine -> rapport de cloture`.
+- Le flux métier est : `Survey optionnel (s'il existe, il doit etre valide) -> devis non refuse -> achat recu -> chantier termine -> rapport de cloture`.
 
 ## Commandes
 
@@ -25,6 +25,7 @@ PostgreSQL doit être disponible avant `migrate` ou `runserver`. En développeme
 ## Architecture à respecter
 
 - `business/models.py` : modèles et invariants métier ; conserver les validations dans `clean()`.
+- `business/permissions.py` : rôles (`Employé`, `Manager`, `DT`, `DG`) et droits (`can_edit_project`, `can_view_financials`, …).
 - `business/forms.py` : `ModelForm` et présentation des champs.
 - `business/views.py` : orchestration HTTP, transitions de statut et props envoyées à Inertia.
 - `core/views.py` : authentification et tableau de bord.
@@ -47,6 +48,7 @@ Pour une modification du workflow, mettre à jour ensemble la règle du modèle,
 ## Points de vigilance
 
 - Ne jamais journaliser, afficher ou conserver des mots de passe, clés secrètes ou autres identifiants sensibles ; inspecter et corriger tout code de debug rencontré dans le chemin modifié.
+- `Project.client` est une clé vers `Client` ; afficher `project.client_name` côté interface, ne pas stocker le nom en texte libre.
 - Ne pas contourner les transitions en changeant directement un statut depuis une nouvelle vue ou un composant.
 - `Purchase` réutilise le dernier achat par défaut ; `?nouveau=1` force la création d’un achat séparé.
 - `.env` est nécessaire pour une configuration réelle et ne doit pas être commité.

@@ -2,14 +2,13 @@ import logging
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import Group
 
-logger = logging.getLogger(__name__)
+from business.permissions import ROLES
 
 class Command(BaseCommand):
     help = "Initialise les rôles (groupes) de l'application"
 
     def handle(self, *args, **options):
-        roles = ['Employé', 'Manager', 'DT', 'DG']
-        for role_name in roles:
+        for role_name in ROLES:
             group, created = Group.objects.get_or_create(name=role_name)
             if created:
                 self.stdout.write(self.style.SUCCESS(f"Groupe créé : {role_name}"))

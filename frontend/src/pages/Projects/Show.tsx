@@ -3,7 +3,7 @@ import { Link, useForm } from '@inertiajs/react'
 import Status from '../../components/Status'
 import { useState } from 'react'
 
-function Step({ title, done, href, text, pdfHref, onSendEmail, quoteExists, planningExists, planningPdfHref }: any) {
+function Step({ title, done, href, text, pdfHref, onSendEmail, quoteExists, planningExists, planningPdfHref, actionText }: any) {
     const downloadHref = pdfHref || (title.includes('Devis') ? href.replace('/devis/', '/devis/pdf/') : null)
     return (
         <div className={`rounded-xl border p-4 transition ${done ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'}`}>
@@ -18,7 +18,7 @@ function Step({ title, done, href, text, pdfHref, onSendEmail, quoteExists, plan
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-4">
                 <Link href={href} className="text-sm font-semibold text-amber-700 hover:text-amber-800">
-                    {done ? 'Mettre à jour' : 'Renseigner'} →
+                    {actionText || (done ? 'Mettre à jour' : 'Renseigner')} →
                 </Link>
                 {downloadHref && quoteExists && (
                     <a href={downloadHref} target="_blank" rel="noreferrer" className="text-sm font-semibold text-slate-700 hover:text-slate-900">
@@ -66,6 +66,9 @@ function PhotoGallery({ title, photos }: any) {
 export default function Show({ project }: any) {
     const survey = project.survey
     const quote = project.quote
+    const quotes = project.quotes || []
+    const purchases = project.purchases || []
+    const documents = project.documents || []
     const schedule = project.schedule
     const site = project.site
     const report = project.report
@@ -84,6 +87,24 @@ export default function Show({ project }: any) {
     const { data: emailData, setData: setEmailData, post: postEmail, processing: emailProcessing } = useForm({
         email: project.clientEmail || '',
     })
+    const [fileModalOpen, setFileModalOpen] = useState(false)
+    const { data: fileData, setData: setFileData, post: postFile, processing: fileProcessing } = useForm({
+        name: '',
+        category: 'OTHER',
+        file: null as any
+    })
+    
+    const handleFileUpload = (e: React.FormEvent) => {
+        e.preventDefault()
+        postFile(`/projets/${project.id}/documents/`, {
+            forceFormData: true,
+            onSuccess: () => {
+                setFileModalOpen(false)
+                setFileData('name', '')
+                setFileData('file', null)
+            }
+        })
+    }
 
     const handleSendEmail = (e: React.FormEvent) => {
         e.preventDefault()
@@ -133,6 +154,38 @@ export default function Show({ project }: any) {
                 </div>
             </div>
 
+            {/* Modal Upload Fichier */}
+            {fileModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+                    <div className="card w-full max-w-md bg-white shadow-2xl">
+                        <h3 className="text-xl font-bold text-slate-900">Ajouter un document</h3>
+                        <form onSubmit={handleFileUpload} className="mt-4 space-y-4" encType="multipart/form-data">
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-slate-600">Catégorie</label>
+                                <select required value={fileData.category} onChange={(e) => setFileData('category', e.target.value)} className="input mt-1">
+                                    <option value="QUOTE">Devis signé</option>
+                                    <option value="INVOICE">Facture</option>
+                                    <option value="DELIVERY_SLIP">Bon de livraison</option>
+                                    <option value="PHOTO">Photo</option>
+                                    <option value="OTHER">Autre</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-slate-600">Nom du document</label>
+                                <input type="text" required value={fileData.name} onChange={(e) => setFileData('name', e.target.value)} className="input mt-1" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-slate-600">Fichier</label>
+                                <input type="file" required onChange={(e) => setFileData('file', e.target.files?.[0])} className="input mt-1" />
+                            </div>
+                            <div className="flex justify-end gap-3 pt-2">
+                                <button type="button" onClick={() => setFileModalOpen(false)} className="btn-muted text-xs">Annuler</button>
+                                <button type="submit" disabled={fileProcessing} className="btn-primary text-xs">{fileProcessing ? 'Envoi...' : 'Ajouter'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
             {/* Modal Envoi Devis par Email */}
             {emailModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -190,11 +243,12 @@ export default function Show({ project }: any) {
                         />
                         <Step
                             title="2. Devis"
-                            done={quote?.status === 'SENT' || quote?.status === 'APPROVED'}
+                            done={quote?.status === 'ACCEPTED'}
                             href={`/projets/${project.id}/devis/`}
-                            text={quote ? `${quote.number} — ${quote.status === 'REJECTED' ? 'refusé' : 'envoyé au client'}` : 'Chiffrage avec gestion des unités (accessible directement).'}
+                            text={quote ? `Devis Accepté : ${quote.number}` : 'Chiffrage avec gestion des unités (accessible directement).'}
                             quoteExists={!!quote}
-                            onSendEmail={() => setEmailModalOpen(true)}
+                            onSendEmail={quote ? () => setEmailModalOpen(true) : undefined}
+                            actionText="Gérer les devis"
                         />
                         <Step
                             title="3. Planning du projet"
@@ -209,6 +263,7 @@ export default function Show({ project }: any) {
                             done={purchaseDone}
                             href={`/projets/${project.id}/achats/`}
                             text={purchaseDone ? 'Au moins une commande réceptionnée.' : 'Commandes fournisseurs après devis validé.'}
+                            actionText="Nouvel achat"
                         />
                         <Step
                             title="5. Chantier"
@@ -287,72 +342,108 @@ export default function Show({ project }: any) {
                 </aside>
             </section>
 
-            {/* Aperçu du Devis avec champ Unité */}
-            {quote && quote.lines?.length > 0 && (
-                <section className="mt-6 card">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
-                        <div>
-                            <h3 className="font-bold text-lg text-slate-900">Détail du Devis — {quote.number}</h3>
-                            <p className="text-xs text-slate-500">Projet {project.projectNumber} · Réf client : {project.reference}</p>
-                        </div>
-                        <div className="mt-2 sm:mt-0 flex gap-2">
-                            <a
-                                href={`/projets/${project.id}/devis/pdf/`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                                📄 Télécharger PDF
-                            </a>
-                            <button
-                                type="button"
-                                onClick={() => setEmailModalOpen(true)}
-                                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                            >
-                                ✉️ Envoyer au client
-                            </button>
-                        </div>
-                    </div>
+            {/* Historique des Devis */}
+            <section className="mt-6 card">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="font-bold text-lg text-slate-900">Historique des Devis</h3>
+                </div>
+                {quotes.length > 0 ? (
                     <div className="mt-4 overflow-x-auto">
                         <table className="w-full border-collapse text-left text-sm">
                             <thead>
                                 <tr className="border-b border-slate-200 text-xs font-bold uppercase text-slate-500">
-                                    <th className="py-2 pr-3">Qté</th>
-                                    <th className="py-2 pr-3">Unité</th>
-                                    <th className="py-2 pr-3">Désignation</th>
-                                    <th className="py-2 pr-3 text-right">Prix Unitaire</th>
-                                    <th className="py-2 text-right">Montant</th>
+                                    <th className="py-2 pr-3">Numéro</th>
+                                    <th className="py-2 pr-3 text-right">Montant HT</th>
+                                    <th className="py-2 pr-3">Statut</th>
+                                    <th className="py-2 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {quote.lines.map((l: any, idx: number) => (
-                                    <tr key={idx}>
-                                        <td className="py-2.5 pr-3 font-semibold text-slate-900">{l.quantity}</td>
-                                        <td className="py-2.5 pr-3 text-slate-600 font-medium">
-                                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{l.unit || 'u'}</span>
-                                        </td>
-                                        <td className="py-2.5 pr-3 text-slate-700">{l.designation}</td>
-                                        <td className="py-2.5 pr-3 text-right text-slate-600">
-                                            {Number(l.unitPrice).toLocaleString('fr-FR')} FCFA
-                                        </td>
-                                        <td className="py-2.5 text-right font-bold text-slate-900">
-                                            {Number(l.amount).toLocaleString('fr-FR')} FCFA
+                                {quotes.map((q: any) => (
+                                    <tr key={q.id}>
+                                        <td className="py-2.5 font-bold text-slate-900">{q.number}</td>
+                                        <td className="py-2.5 text-right font-semibold">{Number(q.amount).toLocaleString('fr-FR')} FCFA</td>
+                                        <td className="py-2.5"><Status value={q.status} /></td>
+                                        <td className="py-2.5 text-right text-xs space-x-2">
+                                            <a href={`/projets/${project.id}/devis/pdf/?quote_id=${q.id}`} target="_blank" rel="noreferrer" className="text-slate-600 hover:text-slate-900 font-bold">PDF</a>
+                                            <Link href={`/projets/${project.id}/devis/${q.id}/`} className="text-amber-700 hover:text-amber-900 font-bold">Modifier</Link>
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
-                            <tfoot>
-                                <tr className="border-t-2 border-slate-200 font-bold">
-                                    <td colSpan={4} className="py-3 text-right text-slate-700">Total HT :</td>
-                                    <td className="py-3 text-right text-amber-700 text-base">
-                                        {Number(quote.adjustedAmount || quote.amount).toLocaleString('fr-FR')} FCFA
-                                    </td>
-                                </tr>
-                            </tfoot>
                         </table>
                     </div>
-                </section>
-            )}
+                ) : (
+                    <p className="mt-4 text-sm text-slate-500">Aucun devis enregistré.</p>
+                )}
+            </section>
+
+            {/* Historique des Achats */}
+            <section className="mt-6 card">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="font-bold text-lg text-slate-900">Suivi des Achats</h3>
+                </div>
+                {purchases.length > 0 ? (
+                    <div className="mt-4 space-y-4">
+                        {purchases.map((p: any) => (
+                            <div key={p.id} className="border border-slate-200 rounded-lg p-4">
+                                <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-2">
+                                    <div>
+                                        <span className="font-bold text-slate-900 mr-3">{p.reference}</span>
+                                        <span className="text-slate-500">{p.supplier}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <span className="font-bold text-lg">{Number(p.amount).toLocaleString('fr-FR')} FCFA</span>
+                                        <Status value={p.status} />
+                                        <Link href={`/projets/${project.id}/achats/${p.id}/`} className="text-xs font-bold text-amber-700 hover:text-amber-900">Modifier</Link>
+                                    </div>
+                                </div>
+                                <div className="text-xs text-slate-500 space-y-1">
+                                    {p.lines?.map((l: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between">
+                                            <span>{l.quantity} {l.unit} - {l.designation}</span>
+                                            <span>{Number(l.amount).toLocaleString('fr-FR')} FCFA</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="mt-4 text-sm text-slate-500">Aucun achat enregistré.</p>
+                )}
+            </section>
+            
+            {/* Documents et Fichiers */}
+            <section className="mt-6 card">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="font-bold text-lg text-slate-900">Documents et Fichiers</h3>
+                    <button onClick={() => setFileModalOpen(true)} className="btn-muted text-xs">
+                        + Ajouter un document
+                    </button>
+                </div>
+                {documents.length > 0 ? (
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                        {documents.map((doc: any) => (
+                            <div key={doc.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
+                                <div className="overflow-hidden">
+                                    <p className="font-bold text-sm truncate" title={doc.name}>{doc.name}</p>
+                                    <p className="text-xs text-slate-500">{doc.category}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <a href={doc.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-800 text-sm font-bold">Ouvrir</a>
+                                    {isDg && (
+                                        <Link method="post" href={`/projets/documents/${doc.id}/supprimer/`} as="button" className="text-red-600 hover:text-red-800 text-sm font-bold" preserveScroll>✖</Link>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="mt-4 text-sm text-slate-500">Aucun document joint.</p>
+                )}
+            </section>
+
 
             <section className="mt-5 grid gap-5 lg:grid-cols-2">
                 <PhotoGallery title="Photos du Survey" photos={surveyPhotos} />

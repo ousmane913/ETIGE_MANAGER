@@ -9,6 +9,7 @@ from inertia import render
 
 logger = logging.getLogger(__name__)
 from business.models import Client, Project, Quote, Site
+from business.permissions import role_flags
 
 def health_check(request):
     """Endpoint léger pour le health check Render — aucune dépendance frontend."""
@@ -66,7 +67,25 @@ def logout_view(request):
 @login_required
 def dashboard(request):
     return render(request, 'Dashboard', {
-        'metrics': {'clients': Client.objects.count(), 'projects': Project.objects.count(), 'quotesPending': Quote.objects.filter(status=Quote.Status.DRAFT).count(), 'activeSites': Site.objects.filter(status=Site.Status.IN_PROGRESS).count()},
-        'recentProjects': list(Project.objects.order_by('-created_at').values('id', 'name', 'reference', 'status', 'client')[:6]),
-        'user': {'name': request.user.get_full_name() or request.user.username, 'role': request.user.groups.first().name if request.user.groups.exists() else 'Administrateur'},
+        'metrics': {
+            'clients': Client.objects.count(),
+            'projects': Project.objects.count(),
+            'quotesPending': Quote.objects.filter(status=Quote.Status.SENT).count(),
+            'activeSites': Site.objects.filter(status=Site.Status.IN_PROGRESS).count(),
+        },
+        'recentProjects': [
+            {
+                'id': project.id,
+                'name': project.name,
+                'reference': project.reference,
+                'status': project.status,
+                'client': project.client_name,
+            }
+            for project in Project.objects.select_related('client').order_by('-created_at')[:6]
+        ],
+        'user': {
+            'name': request.user.get_full_name() or request.user.username,
+            'role': request.user.groups.first().name if request.user.groups.exists() else 'Administrateur',
+            **role_flags(request.user),
+        },
     })

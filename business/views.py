@@ -8,21 +8,35 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.mail import EmailMessage
 from django.db import transaction, models
+from django.db.models.deletion import ProtectedError
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
-from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm
-from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, Site, ClosureReport, ProjectPhoto, Expense, ProjectSchedule, PlanningTask, generate_next_project_number
+from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm, ProjectDocumentForm
+from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
+from .permissions import (
+    can_delete_client,
+    can_delete_project,
+    can_edit_project,
+    can_view_financials,
+    MSG_DG_ONLY_DELETE_CLIENT,
+    MSG_DG_ONLY_DELETE_PROJECT,
+    MSG_DG_ONLY_EDIT,
+    require_permission,
+    role_flags,
+)
 
 def errors(form): return {field: [str(error) for error in field_errors] for field, field_errors in form.errors.items()}
 def form_value(value):
     if value is None:
         return ''
-    if hasattr(value, 'isoformat'):
-        return value.isoformat()
     if isinstance(value, Decimal):
         return str(value).replace(',', '.')
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    if hasattr(value, 'pk'):
+        return str(value.pk)
     return str(value)
 
 def form_props(form, title, action, subtitle=''):
@@ -42,7 +56,10 @@ def related_or_none(instance, relation):
 @login_required
 @require_http_methods(['GET'])
 def clients(request):
-    return render(request, 'Clients/Index', {'clients': list(Client.objects.order_by('company_name').values('id', 'company_name', 'contact_name', 'email', 'phone'))})
+    return render(request, 'Clients/Index', {
+        'clients': list(Client.objects.order_by('company_name').values('id', 'company_name', 'contact_name', 'email', 'phone')),
+        **role_flags(request.user),
+    })
 
 @login_required
 @require_http_methods(['GET', 'POST'])
@@ -65,41 +82,50 @@ def client_edit(request, client_id):
 
 @login_required
 @require_http_methods(['POST'])
+@require_permission(can_delete_client, MSG_DG_ONLY_DELETE_CLIENT, fallback='clients')
 def client_delete(request, client_id):
     client = get_object_or_404(Client, pk=client_id)
-    client.delete()
+    try:
+        client.delete()
+    except ProtectedError:
+        messages.error(request, 'Impossible de supprimer ce client : des projets y sont encore liés.')
+        return redirect('clients')
     messages.success(request, 'Client supprimé.')
     return redirect('clients')
 
 @login_required
 def projects(request):
     query = request.GET.get('q', '').strip()
-    qs = Project.objects.order_by('-created_at')
+    qs = Project.objects.select_related('client').order_by('-created_at')
     if query:
         qs = qs.filter(
             models.Q(project_number__icontains=query) |
             models.Q(reference__icontains=query) |
             models.Q(name__icontains=query) |
-            models.Q(client__icontains=query)
+            models.Q(client__company_name__icontains=query)
         )
-    data = list(qs.values('id', 'project_number', 'reference', 'name', 'status', 'client', 'budget', 'target_end_date'))
-    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
-    is_dt = request.user.groups.filter(name='DT').exists()
+    show_budget = can_view_financials(request.user)
+    data = [{
+        'id': project.id,
+        'project_number': project.project_number,
+        'reference': project.reference,
+        'name': project.name,
+        'status': project.status,
+        'client': project.client_name,
+        'budget': project.budget if show_budget else None,
+        'target_end_date': project.target_end_date,
+    } for project in qs]
     return render(request, 'Projects/Index', {
         'projects': data,
         'statuses': dict(Project.Status.choices),
         'searchQuery': query,
-        'isDg': is_dg,
-        'isDt': is_dt,
+        **role_flags(request.user),
     })
 
 @login_required
 @require_http_methods(['POST'])
+@require_permission(can_delete_project, MSG_DG_ONLY_DELETE_PROJECT)
 def project_delete(request, project_id):
-    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
-    if not is_dg:
-        messages.error(request, 'Seul le Directeur Général (DG) est habilité à supprimer un projet.')
-        return redirect('projects')
     project = get_object_or_404(Project, pk=project_id)
     project.delete()
     messages.success(request, 'Projet supprimé.')
@@ -108,10 +134,8 @@ def project_delete(request, project_id):
 @login_required
 @require_http_methods(['GET', 'POST'])
 def project_create(request):
-    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
-    is_dt = request.user.groups.filter(name='DT').exists()
-    is_management = is_dg or is_dt
-    initial = {'project_number': generate_next_project_number()}
+    is_management = can_view_financials(request.user)
+    initial = {'project_number': peek_next_project_number()}
     form = ProjectForm(request.POST or None, initial=initial)
     if not is_management:
         if 'budget' in form.fields: del form.fields['budget']
@@ -119,8 +143,6 @@ def project_create(request):
         project = form.save(commit=False)
         if not is_management:
             project.budget = 0
-        if not project.project_number:
-            project.project_number = generate_next_project_number()
         project.save()
         messages.success(request, f'Projet {project.project_number} créé avec succès.')
         return redirect('project-detail', project.id)
@@ -128,13 +150,9 @@ def project_create(request):
 
 @login_required
 @require_http_methods(['GET', 'POST'])
+@require_permission(can_edit_project, MSG_DG_ONLY_EDIT)
 def project_edit(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
-    is_dt = request.user.groups.filter(name='DT').exists()
-    if not is_dg:
-        messages.error(request, 'Seul le Directeur Général (DG) dispose des autorisations pour modifier le projet.')
-        return redirect('project-detail', project.id)
     form = ProjectForm(request.POST or None, instance=project)
     if request.method == 'POST' and form.is_valid():
         form.save()
@@ -143,9 +161,10 @@ def project_edit(request, project_id):
     return render(request, 'Shared/Form', form_props(form, 'Modifier le projet', f'/projets/{project.id}/modifier/', f'Projet {project.project_number or project.reference} — {project.name}'))
 
 def _detail_props(request, project):
-    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
-    is_dt = request.user.groups.filter(name='DT').exists()
-    is_management = is_dg or is_dt
+    flags = role_flags(request.user)
+    is_dg = flags['isDg']
+    is_dt = flags['isDt']
+    is_management = flags['isManagement']
 
     total_purchases = sum(p.amount for p in project.purchases.all())
     total_expenses = sum(e.amount for e in project.expenses.all())
@@ -154,15 +173,12 @@ def _detail_props(request, project):
     # Budget Final saisi par DG/DT dans le formulaire de clôture
     report = related_or_none(project, 'closure_report')
     final_budget = report.final_budget if report and report.final_budget else None
-    quote = related_or_none(project, 'quote')
+    quote = project.quotes.filter(status='ACCEPTED').first()
     schedule = related_or_none(project, 'schedule')
 
     profit = None
     if final_budget is not None:
         profit = float(final_budget) - float(final_cost)
-
-    client_obj = Client.objects.filter(company_name__iexact=project.client).first()
-    client_email = client_obj.email if client_obj else ''
 
     return {'project': {
         'id': project.id,
@@ -171,8 +187,8 @@ def _detail_props(request, project):
         'name': project.name,
         'address': project.address,
         'status': project.status,
-        'client': project.client,
-        'clientEmail': client_email,
+        'client': project.client_name,
+        'clientEmail': project.client_email,
         'targetEndDate': project.target_end_date,
         'isManagement': is_management,
         'isDg': is_dg,
@@ -189,6 +205,8 @@ def _detail_props(request, project):
             'status': quote.status,
             'lines': [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price), 'adjustedUnitPrice': str(line.adjusted_unit_price) if is_management and line.adjusted_unit_price is not None else None, 'amount': str(line.amount)} for line in quote.lines.all()]
         },
+        'quotes': [{'id': q.id, 'number': q.number, 'amount': str(q.final_adjusted_amount), 'status': q.status, 'date': q.created_at.isoformat()} for q in project.quotes.all().order_by('-created_at')],
+        'documents': [{'id': d.id, 'name': d.name, 'category': d.category, 'url': d.file.url, 'uploadedBy': d.uploaded_by.username if d.uploaded_by else '', 'date': d.created_at.isoformat()} for d in project.documents.all().order_by('-created_at')],
         'schedule': schedule and {
             'startDate': schedule.start_date,
             'endDate': schedule.end_date,
@@ -196,7 +214,7 @@ def _detail_props(request, project):
             'tasksCount': schedule.tasks.count(),
             'completedTasksCount': schedule.tasks.filter(status='DONE').count(),
         },
-        'purchases': list(project.purchases.values('reference', 'supplier', 'amount', 'status')),
+        'purchases': [{'id': p.id, 'reference': p.reference, 'supplier': p.supplier, 'amount': str(p.amount), 'status': p.status, 'ordered_on': p.ordered_on, 'lines': [{'designation': l.designation, 'quantity': l.quantity, 'unitPrice': str(l.unit_price), 'amount': str(l.amount)} for l in p.lines.all()]} for p in project.purchases.all().order_by('-created_at')],
         'expenses': list(project.expenses.values('description', 'amount', 'date', 'created_at')),
         'site': related_or_none(project, 'site') and {'status': project.site.status, 'progress': project.site.progress, 'notes': project.site.notes},
         'report': report and {'deliveredOn': report.delivered_on},
@@ -205,7 +223,7 @@ def _detail_props(request, project):
 
 @login_required
 def project_detail(request, project_id):
-    return render(request, 'Projects/Show', _detail_props(request, get_object_or_404(Project, pk=project_id)))
+    return render(request, 'Projects/Show', _detail_props(request, get_object_or_404(Project.objects.select_related('client'), pk=project_id)))
 
 def _workflow_form(request, project_id, Form, model, title, phase, extra=None):
     project = get_object_or_404(Project, pk=project_id)
@@ -256,11 +274,15 @@ def survey_create(request, project_id):
 
 @login_required
 @require_http_methods(['GET', 'POST'])
-def quote_create(request, project_id):
-    project = get_object_or_404(Project, pk=project_id)
-    quote = related_or_none(project, 'quote') or Quote(project=project, number=project.project_number or project.reference)
+def quote_create(request, project_id, quote_id=None):
+    project = get_object_or_404(Project.objects.select_related('client'), pk=project_id)
+    if quote_id:
+        quote = get_object_or_404(Quote, project=project, pk=quote_id)
+    else:
+        count = project.quotes.count() + 1
+        quote = Quote(project=project, number=f"{project.project_number or project.reference}-V{count}")
     form = QuoteForm(request.POST or None, instance=quote)
-    is_management = request.user.groups.filter(name__in=['DG', 'DT']).exists()
+    is_management = can_view_financials(request.user)
     lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
     if request.method == 'POST':
         try:
@@ -310,12 +332,6 @@ def quote_create(request, project_id):
                     line.full_clean()
                 QuoteLine.objects.bulk_create(parsed_lines)
                 
-                # Mise à jour de l'achat global si existant
-                purchase = project.purchases.first()
-                if purchase:
-                    purchase.amount = record.amount_excl_tax
-                    purchase.save()
-
                 if project.status == Project.Status.SURVEY:
                     project.status = Project.Status.QUOTATION
                     project.save()
@@ -338,8 +354,8 @@ def quote_create(request, project_id):
                     form.add_error(None, f'{form.fields[field_name].label if field_name in form.fields else field_name} : {field_error}')
     return render(request, 'Quote/Form', {
         'title': 'Devis',
-        'subtitle': f'N° {project.project_number or project.reference} — Réf {project.reference} — Client {project.client}',
-        'action': f'/projets/{project.id}/devis/',
+        'subtitle': f'N° {project.project_number or project.reference} — Réf {project.reference} — Client {project.client_name}',
+        'action': f'/projets/{project.id}/devis/{quote.id}/' if quote.pk else f'/projets/{project.id}/devis/',
         'fields': form_props(form, 'Devis', '', '')['fields'],
         'errors': form_props(form, 'Devis', '', '')['errors'],
         'lines': lines,
@@ -349,7 +365,7 @@ def quote_create(request, project_id):
             'name': project.name,
             'projectNumber': project.project_number or project.reference,
             'reference': project.reference,
-            'client': project.client,
+            'client': project.client_name,
         }
     })
 
@@ -376,7 +392,7 @@ def _build_quote_pdf_bytes(project, quote):
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Reference Client : {project.reference}')
     y -= 5 * mm
-    pdf.drawString(20 * mm, y, f'Client : {project.client}')
+    pdf.drawString(20 * mm, y, f'Client : {project.client_name}')
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Nom du projet : {project.name}')
     y -= 5 * mm
@@ -410,9 +426,9 @@ def _build_quote_pdf_bytes(project, quote):
 
 @login_required
 @require_http_methods(['GET'])
-def quote_pdf(request, project_id):
+def quote_pdf(request, project_id, quote_id):
     project = get_object_or_404(Project, pk=project_id)
-    quote = get_object_or_404(Quote, project=project)
+    quote = get_object_or_404(Quote, project=project, pk=quote_id)
     pdf_data = _build_quote_pdf_bytes(project, quote)
     response = HttpResponse(pdf_data, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="devis-{quote.number}.pdf"'
@@ -420,19 +436,17 @@ def quote_pdf(request, project_id):
 
 @login_required
 @require_http_methods(['POST'])
-def quote_send_email(request, project_id):
+def quote_send_email(request, project_id, quote_id):
     project = get_object_or_404(Project, pk=project_id)
     # Try to fetch an existing Quote; if none exists, inform the user
-    quote = Quote.objects.filter(project=project).first()
+    quote = get_object_or_404(Quote, project=project, pk=quote_id)
     if not quote:
         messages.error(request, 'Aucun devis trouvé pour ce projet. Veuillez d’abord créer un devis.')
         return redirect('project-detail', project.id)
 
     recipient_email = request.POST.get('email', '').strip()
     if not recipient_email:
-        client_obj = Client.objects.filter(company_name__iexact=project.client).first()
-        if client_obj and client_obj.email:
-            recipient_email = client_obj.email
+        recipient_email = project.client_email
 
     if not recipient_email:
         messages.error(request, 'Veuillez renseigner une adresse email pour le client.')
@@ -462,6 +476,8 @@ def quote_send_email(request, project_id):
 
 
 
+        quote.status = Quote.Status.SENT
+        quote.save(update_fields=['status'])
         messages.success(request, f'Devis envoyé avec succès à {recipient_email}.')
     except Exception as exc:
         messages.error(request, f"Erreur lors de l'envoi de l'email : {exc}")
@@ -472,8 +488,9 @@ def quote_send_email(request, project_id):
 @require_http_methods(['GET', 'POST'])
 def project_planning(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
-    is_dg = request.user.groups.filter(name='DG').exists() or request.user.is_superuser
-    is_dt = request.user.groups.filter(name='DT').exists()
+    flags = role_flags(request.user)
+    is_dg = flags['isDg']
+    is_dt = flags['isDt']
     schedule, _ = ProjectSchedule.objects.get_or_create(project=project)
 
     if request.method == 'POST':
@@ -503,6 +520,15 @@ def project_planning(request, project_id):
                             status=t.get('status') or 'TODO'
                         ))
                 PlanningTask.objects.bulk_create(new_tasks)
+            # Update site progress if site exists
+            if hasattr(project, 'site'):
+                total = schedule.tasks.count()
+                done = schedule.tasks.filter(status='DONE').count()
+                if total > 0:
+                    progress = int((done / total) * 100)
+                    project.site.progress = progress
+                    project.site.save()
+
             messages.success(request, 'Planning enregistré avec succès.')
             return redirect('project-detail', project.id)
         except Exception as exc:
@@ -514,7 +540,7 @@ def project_planning(request, project_id):
             'name': project.name,
             'projectNumber': project.project_number or project.reference,
             'reference': project.reference,
-            'client': project.client,
+            'client': project.client_name,
         },
         'schedule': {
             'startDate': schedule.start_date.isoformat() if schedule.start_date else '',
@@ -563,7 +589,7 @@ def planning_pdf(request, project_id):
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Reference Client : {project.reference}')
     y -= 5 * mm
-    pdf.drawString(20 * mm, y, f'Client : {project.client}')
+    pdf.drawString(20 * mm, y, f'Client : {project.client_name}')
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Nom du projet : {project.name}')
     y -= 5 * mm
@@ -617,10 +643,75 @@ def planning_pdf(request, project_id):
 
 @login_required
 @require_http_methods(['GET', 'POST'])
-def purchase_create(request, project_id):
-    def advance(record, project):
-        if record.status == Purchase.Status.RECEIVED: project.status = Project.Status.SITE; project.save()
-    return _workflow_form(request, project_id, PurchaseForm, Purchase, 'Achat', 'achats', advance)
+def purchase_create(request, project_id, purchase_id=None):
+    project = get_object_or_404(Project, pk=project_id)
+    if purchase_id:
+        purchase = get_object_or_404(Purchase, project=project, pk=purchase_id)
+    else:
+        purchase = Purchase(project=project, reference=project.reference)
+    
+    form = PurchaseForm(request.POST or None, instance=purchase)
+    lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in purchase.lines.all()] if purchase.pk else []
+    
+    if request.method == 'POST':
+        try:
+            submitted_lines = json.loads(request.POST.get('lines', '[]'))
+            if not isinstance(submitted_lines, list):
+                raise ValueError
+            lines = submitted_lines
+            purchase.amount = sum((Decimal(str(line.get('quantity', '0'))) * Decimal(str(line.get('unitPrice', '0'))) for line in submitted_lines if isinstance(line, dict)), Decimal('0'))
+        except (InvalidOperation, TypeError, ValueError, json.JSONDecodeError):
+            purchase.amount = Decimal('0')
+            
+    if request.method == 'POST' and form.is_valid():
+        raw_lines = request.POST.getlist('lines')
+        if len(raw_lines) == 1 and isinstance(raw_lines[0], str):
+            try:
+                raw_lines = json.loads(raw_lines[0])
+            except json.JSONDecodeError:
+                raw_lines = []
+        parsed_lines = []
+        try:
+            for index, raw_line in enumerate(raw_lines, start=1):
+                if not isinstance(raw_line, dict) or not str(raw_line.get('designation', '')).strip():
+                    raise ValueError(f'Désignation de la ligne {index} obligatoire.')
+                quantity = Decimal(str(raw_line.get('quantity', '1')))
+                unit_price = Decimal(str(raw_line.get('unitPrice', '0')))
+                parsed_lines.append(PurchaseLine(quantity=int(quantity), unit=str(raw_line.get('unit', 'u'))[:30], designation=str(raw_line['designation'])[:255], unit_price=unit_price))
+            if not parsed_lines:
+                raise ValueError('Ajoutez au moins une ligne d\'achat.')
+            total = sum((line.quantity * line.unit_price for line in parsed_lines), Decimal('0'))
+            with transaction.atomic():
+                record = form.save(commit=False)
+                record.amount = total
+                record.full_clean()
+                record.save()
+                record.lines.all().delete()
+                for line in parsed_lines:
+                    line.purchase = record
+                    line.full_clean()
+                PurchaseLine.objects.bulk_create(parsed_lines)
+                
+                if record.status == Purchase.Status.RECEIVED:
+                    project.status = Project.Status.SITE
+                    project.save()
+            messages.success(request, 'Achat enregistré.')
+            return redirect('project-detail', project.id)
+        except (InvalidOperation, ValueError, ValidationError) as exc:
+            if isinstance(exc, ValidationError) and hasattr(exc, 'message_dict'):
+                message = '; '.join(f'{field} : {" ".join(msgs)}' for field, msgs in exc.message_dict.items())
+            else:
+                message = str(exc)
+            form.add_error(None, message)
+            
+    return render(request, 'Purchase/Form', {
+        'title': 'Achat',
+        'subtitle': f'Projet {project.reference} — {project.name}',
+        'action': f'/projets/{project.id}/achats/{purchase.id}/' if purchase.pk else f'/projets/{project.id}/achats/',
+        'fields': form_props(form, 'Achat', '', '')['fields'],
+        'errors': form_props(form, 'Achat', '', '')['errors'],
+        'lines': lines,
+    })
 
 @login_required
 @require_http_methods(['GET', 'POST'])
@@ -641,3 +732,27 @@ def expense_create(request, project_id):
     def advance(record, project):
         record.created_by = request.user
     return _workflow_form(request, project_id, ExpenseForm, Expense, 'Dépense Supplémentaire', 'depense', advance)
+
+@login_required
+@require_http_methods(['POST'])
+def document_upload(request, project_id):
+    project = get_object_or_404(Project, pk=project_id)
+    form = ProjectDocumentForm(request.POST, request.FILES)
+    if form.is_valid():
+        doc = form.save(commit=False)
+        doc.project = project
+        doc.uploaded_by = request.user
+        doc.save()
+        messages.success(request, 'Document ajouté avec succès.')
+    else:
+        messages.error(request, 'Erreur lors de l\'ajout du document.')
+    return redirect('project-detail', project.id)
+
+@login_required
+@require_http_methods(['POST'])
+def document_delete(request, document_id):
+    doc = get_object_or_404(ProjectDocument, pk=document_id)
+    project_id = doc.project_id
+    doc.delete()
+    messages.success(request, 'Document supprimé.')
+    return redirect('project-detail', project_id)

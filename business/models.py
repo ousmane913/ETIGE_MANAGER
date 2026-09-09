@@ -1,7 +1,9 @@
+import re
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
-from decimal import Decimal
+from django.db import models, transaction
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -17,18 +19,59 @@ class Client(TimestampedModel):
     address = models.TextField(blank=True)
     def __str__(self): return self.company_name
 
-def generate_next_project_number():
-    """Génère le prochain numéro de projet automatique ETIGE (ex: PRJ-001, PRJ-002)."""
-    import re
+def _sequence_from_project_number(number):
+    if not number:
+        return 0
+    match = re.search(r'(\d+)', str(number))
+    return int(match.group(1)) if match else 0
+
+
+def max_existing_project_sequence():
     max_num = 0
-    for p in Project.objects.exclude(project_number=''):
-        match = re.search(r'(\d+)', p.project_number or '')
-        if match:
-            num = int(match.group(1))
-            if num > max_num:
-                max_num = num
-    next_num = max_num + 1 if max_num > 0 else (Project.objects.count() + 1)
+    for number in Project.objects.exclude(project_number__isnull=True).exclude(project_number='').values_list('project_number', flat=True):
+        max_num = max(max_num, _sequence_from_project_number(number))
+    return max_num
+
+
+def peek_next_project_number():
+    """Aperçu du prochain numéro, sans consommer le compteur."""
+    counter = ProjectNumberCounter.objects.filter(pk=1).first()
+    last_value = counter.last_value if counter else 0
+    next_num = max(last_value, max_existing_project_sequence()) + 1
     return f'PRJ-{next_num:03d}'
+
+
+def allocate_project_number(preferred=None):
+    """Attribue un numéro unique (PRJ-001, …) de façon atomique."""
+    preferred = (preferred or '').strip()
+    with transaction.atomic():
+        counter, _ = ProjectNumberCounter.objects.select_for_update().get_or_create(
+            pk=1, defaults={'last_value': 0}
+        )
+        counter.last_value = max(counter.last_value, max_existing_project_sequence())
+        if preferred and not Project.objects.filter(project_number=preferred).exists():
+            counter.last_value = max(counter.last_value, _sequence_from_project_number(preferred))
+            counter.save(update_fields=['last_value'])
+            return preferred
+        counter.last_value += 1
+        counter.save(update_fields=['last_value'])
+        return f'PRJ-{counter.last_value:03d}'
+
+
+def generate_next_project_number():
+    """Aperçu du prochain numéro (compatibilité : ne consomme pas le compteur)."""
+    return peek_next_project_number()
+
+
+class ProjectNumberCounter(models.Model):
+    last_value = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'compteur de numéros de projet'
+        verbose_name_plural = 'compteurs de numéros de projet'
+
+    def __str__(self):
+        return f'PRJ-{self.last_value:03d}'
 
 class Project(TimestampedModel):
     class Status(models.TextChoices):
@@ -40,7 +83,7 @@ class Project(TimestampedModel):
     reference = models.CharField('Référence client', max_length=32)
     project_number = models.CharField('Numéro de projet (ETIGE)', max_length=64, unique=True, null=True, blank=True)
     name = models.CharField('Nom du projet', max_length=180)
-    client = models.CharField('Client', max_length=180)
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='projects', verbose_name='Client')
     address = models.TextField('Adresse')
     start_date = models.DateField('Date de début', null=True, blank=True)
     target_end_date = models.DateField('Échéance cible', null=True, blank=True)
@@ -48,9 +91,19 @@ class Project(TimestampedModel):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.SURVEY)
     manager = models.CharField('Manager', max_length=120, blank=True)
 
+    @property
+    def client_name(self):
+        return self.client.company_name if self.client_id else ''
+
+    @property
+    def client_email(self):
+        if self.client_id and self.client.email:
+            return self.client.email
+        return ''
+
     def save(self, *args, **kwargs):
-        if not self.project_number:
-            self.project_number = generate_next_project_number()
+        if not self.pk or not self.project_number:
+            self.project_number = allocate_project_number(self.project_number)
         super().save(*args, **kwargs)
 
     def __str__(self): return f'{self.project_number} — {self.reference} — {self.name}'
@@ -66,9 +119,11 @@ class Survey(TimestampedModel):
 
 class Quote(TimestampedModel):
     class Status(models.TextChoices):
+        DRAFT = 'DRAFT', 'Brouillon'
         SENT = 'SENT', 'Envoyé'
+        ACCEPTED = 'ACCEPTED', 'Accepté'
         REJECTED = 'REJECTED', 'Refusé'
-    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='quote')
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='quotes')
     number = models.CharField(max_length=40)
     amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
     adjusted_amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
@@ -153,16 +208,29 @@ class Purchase(TimestampedModel):
     reference = models.CharField(max_length=40)
     supplier = models.CharField(max_length=180)
     description = models.TextField()
-    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    amount = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.ORDERED)
     ordered_on = models.DateField(null=True, blank=True)
     delivered_on = models.DateField(null=True, blank=True)
     def clean(self):
-        if not hasattr(self.project, 'quote'):
-            raise ValidationError('Le devis doit être créé avant tout achat.')
-        if self.project.quote.status == Quote.Status.REJECTED:
-            raise ValidationError('Le devis ne doit pas être refusé (REJECTED) pour pouvoir créer un achat.')
+        if not self.project.quotes.filter(status=Quote.Status.ACCEPTED).exists():
+            raise ValidationError('Au moins un devis doit être accepté (ACCEPTED) pour pouvoir créer un achat.')
     def __str__(self): return self.reference
+
+class PurchaseLine(TimestampedModel):
+    purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, related_name='lines')
+    quantity = models.PositiveIntegerField(default=1)
+    unit = models.CharField('Unité', max_length=30, blank=True)
+    designation = models.CharField(max_length=255)
+    unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    @property
+    def amount(self): return self.quantity * self.unit_price
+    def clean(self):
+        if self.quantity <= 0:
+            raise ValidationError({'quantity': 'La quantité doit être supérieure à zéro.'})
+        if self.unit_price < Decimal('0'):
+            raise ValidationError({'unit_price': 'Le prix unitaire ne peut pas être négatif.'})
+
 
 class Expense(TimestampedModel):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='expenses')
@@ -228,3 +296,17 @@ class ProjectPhoto(TimestampedModel):
     image = models.ImageField(upload_to='projects/photos/')
     caption = models.CharField(max_length=180, blank=True)
     def __str__(self): return f'{self.project.reference} - {self.category} - {self.image.name}'
+
+class ProjectDocument(TimestampedModel):
+    class Category(models.TextChoices):
+        QUOTE = 'QUOTE', 'Devis signé'
+        INVOICE = 'INVOICE', 'Facture'
+        DELIVERY_SLIP = 'DELIVERY_SLIP', 'Bon de livraison'
+        PHOTO = 'PHOTO', 'Photo'
+        OTHER = 'OTHER', 'Autre'
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='documents')
+    category = models.CharField(max_length=20, choices=Category.choices, default=Category.OTHER)
+    file = models.FileField(upload_to='projects/documents/')
+    name = models.CharField(max_length=255)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    def __str__(self): return f'{self.name} ({self.get_category_display()})'

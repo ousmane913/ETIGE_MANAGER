@@ -6,10 +6,12 @@ Pour le déploiement cloud avec domaine, HTTPS, sauvegardes et accès depuis le 
 
 ## Fonctionnalités de la V1
 
-- Authentification Django et rôles prêts à attribuer : Administrateur, Direction, Conducteur de travaux, Métreur, Achats, Finance, Client.
-- Répertoire clients et création de projets avec référence, budget, échéance et responsable.
-- Workflow contrôlé : un Survey validé est requis pour le devis ; un devis validé pour les achats ; un achat reçu pour le chantier ; un chantier terminé pour le rapport final.
-- Tableau de bord et suivi détaillé de chaque projet.
+- Authentification Django et rôles : **Employé**, **Manager**, **DT** (direction technique) et **DG** (direction générale). Le super-utilisateur a les mêmes droits que le DG.
+- Répertoire clients : chaque projet est lié à une fiche client (nom, email, téléphone). L’email du client sert à l’envoi du devis.
+- Création de projets avec numéro ETIGE automatique (`PRJ-001`, …), référence, budget, échéance et responsable.
+- Workflow contrôlé : le survey est optionnel ; s’il existe, il doit être validé avant le devis. Un devis non refusé est requis pour les achats ; un achat reçu pour le chantier ; un chantier terminé pour le rapport de clôture.
+- Droits : l’employé saisit ; le DT voit les montants et suit le chantier ; seul le DG peut modifier ou supprimer un projet, et supprimer un client.
+- Tableau de bord, planning, PDF devis / planning, envoi du devis par email.
 - Administration Django disponible sur `/admin/`.
 
 ## Prérequis
@@ -69,8 +71,8 @@ Ouvrez ensuite `http://127.0.0.1:8000/`.
 
 ## Évolutions recommandées
 
-- Permissions fines par rôle et validation à deux niveaux pour les devis.
-- Lignes de devis, catalogue articles, fournisseurs et pièces jointes.
-- Planning, tâches chantier, coûts réels et marges.
-- Génération PDF du devis et du rapport de clôture.
+- Versions de devis / avenants (plusieurs devis par projet).
+- Lignes d’achat, catalogue articles, fournisseurs et pièces jointes.
+- Suivi devis vs achats vs dépenses (marge par chantier).
+- Validation à deux niveaux pour les devis.
 - API mobile et notifications.

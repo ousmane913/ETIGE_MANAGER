@@ -1,5 +1,5 @@
 from django import forms
-from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport, Expense, ProjectSchedule, PlanningTask, generate_next_project_number
+from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport, Expense, ProjectSchedule, PlanningTask, ProjectDocument
 
 class DateInput(forms.DateInput): input_type = 'date'
 class MultipleFileInput(forms.ClearableFileInput): allow_multiple_selected = True
@@ -29,6 +29,7 @@ class ProjectForm(forms.ModelForm):
             'budget': 'Estimation du budget',
             'manager': 'Manager'
         }
+        help_texts = {'client': 'Choisissez une fiche du répertoire clients.'}
 
 class ProjectScheduleForm(forms.ModelForm):
     class Meta:
@@ -69,3 +70,9 @@ class ExpenseForm(forms.ModelForm):
         model = Expense; fields = ['description', 'amount', 'date']
         widgets = {'date': DateInput()}
         labels = {'description': 'Description', 'amount': 'Montant', 'date': 'Date de dépense'}
+
+class ProjectDocumentForm(forms.ModelForm):
+    class Meta:
+        model = ProjectDocument
+        fields = ['category', 'name', 'file']
+        labels = {'category': 'Catégorie', 'name': 'Nom du document', 'file': 'Fichier'}
