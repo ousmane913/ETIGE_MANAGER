@@ -353,6 +353,12 @@ def quote_create(request, project_id):
         }
     })
 
+def _fmt_fcfa(amount):
+    """Formate un montant FCFA : sans decimales, separateur de milliers = point.
+    Ex: 1500000 -> '1.500.000'
+    """
+    return f"{int(round(amount)):,}".replace(',', '.')
+
 def _build_quote_pdf_bytes(project, quote):
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -393,12 +399,12 @@ def _build_quote_pdf_bytes(project, quote):
         pdf.drawString(20 * mm, y, str(line.quantity))
         pdf.drawString(34 * mm, y, str(line.unit or 'u')[:8])
         pdf.drawString(52 * mm, y, line.designation[:38])
-        pdf.drawRightString(150 * mm, y, f'{line.final_unit_price:,.2f} FCFA')
-        pdf.drawRightString(195 * mm, y, f'{line.final_amount:,.2f} FCFA')
+        pdf.drawRightString(150 * mm, y, f'{_fmt_fcfa(line.final_unit_price)} FCFA')
+        pdf.drawRightString(195 * mm, y, f'{_fmt_fcfa(line.final_amount)} FCFA')
         y -= 5 * mm
     y -= 5 * mm
     pdf.setFont('Helvetica-Bold', 10)
-    pdf.drawRightString(195 * mm, y, f'Montant : {quote.final_adjusted_amount:,.2f} FCFA')
+    pdf.drawRightString(195 * mm, y, f'TOTAL : {_fmt_fcfa(quote.final_adjusted_amount)} FCFA')
     pdf.save()
     return buffer.getvalue()
 
