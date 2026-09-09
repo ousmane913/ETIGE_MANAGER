@@ -121,3 +121,12 @@ LOGGING = {
         },
     },
 }
+
+# --- PATCH IPv4 POUR RENDER ---
+# Render a parfois des problèmes de routage IPv6 (Errno 101 Network is unreachable).
+# Ce patch force Python à utiliser uniquement des adresses IPv4 pour les connexions sortantes (comme SMTP).
+import socket
+orig_getaddrinfo = socket.getaddrinfo
+def getaddrinfo_ipv4(*args, **kwargs):
+    return [res for res in orig_getaddrinfo(*args, **kwargs) if res[0] == socket.AF_INET]
+socket.getaddrinfo = getaddrinfo_ipv4
