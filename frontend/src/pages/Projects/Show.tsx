@@ -278,6 +278,29 @@ export default function Show({ project }: any) {
                             text={report ? `Livré le ${report.deliveredOn}` : 'Bilan après la fin du chantier.'}
                         />
                     </div>
+                    {quotes.length > 0 && (
+                        <div className="mt-6 border-t border-slate-200 pt-5">
+                            <h4 className="font-bold text-slate-900">Devis enregistrés</h4>
+                            <div className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
+                                {quotes.map((savedQuote: any) => (
+                                    <div key={savedQuote.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                                        <div>
+                                            <p className="font-semibold text-slate-900">{savedQuote.number}</p>
+                                            <p className="text-slate-500">{Number(savedQuote.amount).toLocaleString('fr-FR')} FCFA</p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${savedQuote.status === 'ACCEPTED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                {savedQuote.status === 'ACCEPTED' ? 'Accepté' : 'Refusé'}
+                                            </span>
+                                            <Link href={`/projets/${project.id}/devis/${savedQuote.id}/`} className="font-semibold text-amber-700 hover:text-amber-800">
+                                                Modifier
+                                            </Link>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Sidebar Financière et Dépenses */}

@@ -286,7 +286,9 @@ def quote_create(request, project_id, quote_id=None):
     lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
     if request.method == 'POST':
         try:
-            submitted_lines = json.loads(request.POST.get('lines', '[]'))
+            submitted_lines = request.POST.getlist('lines')
+            if len(submitted_lines) == 1 and isinstance(submitted_lines[0], str):
+                submitted_lines = json.loads(submitted_lines[0])
             if not isinstance(submitted_lines, list):
                 raise ValueError
             lines = submitted_lines
@@ -296,8 +298,9 @@ def quote_create(request, project_id, quote_id=None):
     if request.method == 'POST' and form.is_valid():
         raw_lines = request.POST.getlist('lines')
         if len(raw_lines) == 1 and isinstance(raw_lines[0], str):
+            raw_lines = raw_lines[0]
             try:
-                raw_lines = json.loads(raw_lines[0])
+                raw_lines = json.loads(raw_lines)
             except json.JSONDecodeError:
                 raw_lines = []
         parsed_lines = []

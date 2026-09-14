@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import json
 
 from django.contrib.auth.models import User, Group
 from django.core import mail
@@ -157,6 +158,29 @@ class EtigeWorkflowTests(TestCase):
 
         self.assertEqual(props['project']['quote']['id'], latest_quote.id)
         self.assertEqual(props['project']['quote']['number'], 'DEV-REJECTED')
+
+    def test_quote_form_persists_json_lines(self):
+        project = self._project('REF-SAVE', 'Projet sauvegarde devis')
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+
+        response = c.post(
+            f'/projets/{project.id}/devis/',
+            data=json.dumps({
+                'number': 'DEV-SAVE',
+                'status': Quote.Status.REJECTED,
+                'notes': 'A conserver',
+                'lines': [{'quantity': '2', 'unit': 'u', 'designation': 'Prestation', 'unitPrice': '12500'}],
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 302)
+        quote = Quote.objects.get(project=project, number='DEV-SAVE')
+        self.assertEqual(quote.status, Quote.Status.REJECTED)
+        self.assertEqual(quote.notes, 'A conserver')
+        self.assertEqual(quote.lines.get().designation, 'Prestation')
+        self.assertEqual(quote.lines.get().quantity, 2)
 
     def test_planning_creation_and_tasks(self):
         project = self._project('REF-PLAN', 'Projet Planning')
