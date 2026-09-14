@@ -5,10 +5,6 @@ function amount(line: any) {
     return Number(line.quantity || 0) * Number(line.unitPrice || 0)
 }
 
-const COMMON_UNITS = [
-    'u', 'm', 'cm', 'm²', 'm³', 'ens', 'kg', 'tonne', 'forfait', 'j', 'h', 'litre'
-]
-
 export default function QuoteForm({ title, subtitle, action, fields, errors, lines: initialLines, project }: any) {
     const initialFields = Object.fromEntries(fields.map((field: any) => [field.name, field.initial ?? '']))
     const normalizedInitialLines = initialLines?.length
@@ -104,12 +100,6 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                     </div>
 
                     <div className="mt-8 overflow-x-auto">
-                        <datalist id="common-units">
-                            {COMMON_UNITS.map((u) => (
-                                <option key={u} value={u} />
-                            ))}
-                        </datalist>
-
                         <table className="w-full min-w-[760px] border-collapse text-sm">
                             <thead>
                                 <tr className="border-b border-slate-200 text-left text-slate-500">
@@ -139,8 +129,7 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                                             <input
                                                 className="input mt-0 w-full"
                                                 type="text"
-                                                list="common-units"
-                                                placeholder="ex: m, m3, ens"
+                                                placeholder="Unité"
                                                 value={line.unit}
                                                 onChange={(e) => updateLine(index, 'unit', e.target.value)}
                                                 required
@@ -158,9 +147,9 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                                         <td className="p-2">
                                             <input
                                                 className="input mt-0 w-full"
-                                                type="number"
-                                                min="0.01"
-                                                step="0.01"
+                                                type="text"
+                                                inputMode="decimal"
+                                                pattern="[0-9]+([.,][0-9]+)?"
                                                 placeholder="Prix unitaire"
                                                 value={line.unitPrice}
                                                 onChange={(e) => updateLine(index, 'unitPrice', e.target.value)}
