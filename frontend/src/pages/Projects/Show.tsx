@@ -343,41 +343,6 @@ export default function Show({ project }: any) {
             </section>
 
 
-            {/* Historique des Achats */}
-            <section className="mt-6 card">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 className="font-bold text-lg text-slate-900">Suivi des Achats</h3>
-                </div>
-                {purchases.length > 0 ? (
-                    <div className="mt-4 space-y-4">
-                        {purchases.map((p: any) => (
-                            <div key={p.id} className="border border-slate-200 rounded-lg p-4">
-                                <div className="flex justify-between items-center border-b border-slate-100 pb-2 mb-2">
-                                    <div>
-                                        <span className="font-bold text-slate-900 mr-3">{p.reference}</span>
-                                        <span className="text-slate-500">{p.supplier}</span>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <span className="font-bold text-lg">{Number(p.amount).toLocaleString('fr-FR')} FCFA</span>
-                                        <Status value={p.status} />
-                                        <Link href={`/projets/${project.id}/achats/${p.id}/`} className="text-xs font-bold text-amber-700 hover:text-amber-900">Modifier</Link>
-                                    </div>
-                                </div>
-                                <div className="text-xs text-slate-500 space-y-1">
-                                    {p.lines?.map((l: any, idx: number) => (
-                                        <div key={idx} className="flex justify-between">
-                                            <span>{l.quantity} {l.unit} - {l.designation}</span>
-                                            <span>{Number(l.amount).toLocaleString('fr-FR')} FCFA</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <p className="mt-4 text-sm text-slate-500">Aucun achat enregistré.</p>
-                )}
-            </section>
             
             {/* Documents et Fichiers */}
             <section className="mt-6 card">
