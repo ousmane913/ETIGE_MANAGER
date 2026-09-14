@@ -342,41 +342,6 @@ export default function Show({ project }: any) {
                 </aside>
             </section>
 
-            {/* Historique des Devis */}
-            <section className="mt-6 card">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 className="font-bold text-lg text-slate-900">Historique des Devis</h3>
-                </div>
-                {quotes.length > 0 ? (
-                    <div className="mt-4 overflow-x-auto">
-                        <table className="w-full border-collapse text-left text-sm">
-                            <thead>
-                                <tr className="border-b border-slate-200 text-xs font-bold uppercase text-slate-500">
-                                    <th className="py-2 pr-3">Numéro</th>
-                                    <th className="py-2 pr-3 text-right">Montant HT</th>
-                                    <th className="py-2 pr-3">Statut</th>
-                                    <th className="py-2 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {quotes.map((q: any) => (
-                                    <tr key={q.id}>
-                                        <td className="py-2.5 font-bold text-slate-900">{q.number}</td>
-                                        <td className="py-2.5 text-right font-semibold">{Number(q.amount).toLocaleString('fr-FR')} FCFA</td>
-                                        <td className="py-2.5"><Status value={q.status} /></td>
-                                        <td className="py-2.5 text-right text-xs space-x-2">
-                                            <a href={`/projets/${project.id}/devis/pdf/?quote_id=${q.id}`} target="_blank" rel="noreferrer" className="text-slate-600 hover:text-slate-900 font-bold">PDF</a>
-                                            <Link href={`/projets/${project.id}/devis/${q.id}/`} className="text-amber-700 hover:text-amber-900 font-bold">Modifier</Link>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <p className="mt-4 text-sm text-slate-500">Aucun devis enregistré.</p>
-                )}
-            </section>
 
             {/* Historique des Achats */}
             <section className="mt-6 card">
