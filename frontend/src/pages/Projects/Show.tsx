@@ -245,7 +245,7 @@ export default function Show({ project }: any) {
                             title="2. Devis"
                             done={quote?.status === 'ACCEPTED'}
                             href={`/projets/${project.id}/devis/`}
-                            text={quote ? `Devis Accepté : ${quote.number}` : 'Chiffrage avec gestion des unités (accessible directement).'}
+                            text={quote ? `Devis ${quote.status === 'ACCEPTED' ? 'accepté' : 'refusé'} : ${quote.number}` : 'Chiffrage avec gestion des unités (accessible directement).'}
                             quoteExists={!!quote}
                             onSendEmail={quote ? () => setEmailModalOpen(true) : undefined}
                             actionText="Gérer les devis"

@@ -4,13 +4,14 @@ from decimal import Decimal
 from django.contrib.auth.models import User, Group
 from django.core import mail
 from django.core.exceptions import ValidationError
-from django.test import TestCase, Client as TestClient
+from django.test import TestCase, Client as TestClient, RequestFactory
 
 from business.models import (
     Project, Quote, QuoteLine, Purchase, Site, ClosureReport,
     ProjectSchedule, PlanningTask, generate_next_project_number, Client,
 )
 from business.permissions import ROLE_DG, ROLE_DT, ROLE_EMPLOYEE
+from business.views import _detail_props
 
 
 class EtigeWorkflowTests(TestCase):
@@ -144,6 +145,18 @@ class EtigeWorkflowTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             purchase.full_clean()
+
+    def test_latest_quote_remains_visible_after_save(self):
+        project = self._project('REF-LAST', 'Projet dernier devis')
+        Quote.objects.create(project=project, number='DEV-ACCEPTED', status=Quote.Status.ACCEPTED)
+        latest_quote = Quote.objects.create(project=project, number='DEV-REJECTED', status=Quote.Status.REJECTED)
+
+        request = RequestFactory().get(f'/projets/{project.id}/')
+        request.user = self.dg_user
+        props = _detail_props(request, project)
+
+        self.assertEqual(props['project']['quote']['id'], latest_quote.id)
+        self.assertEqual(props['project']['quote']['number'], 'DEV-REJECTED')
 
     def test_planning_creation_and_tasks(self):
         project = self._project('REF-PLAN', 'Projet Planning')

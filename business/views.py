@@ -173,7 +173,7 @@ def _detail_props(request, project):
     # Budget Final saisi par DG/DT dans le formulaire de clôture
     report = related_or_none(project, 'closure_report')
     final_budget = report.final_budget if report and report.final_budget else None
-    quote = project.quotes.filter(status='ACCEPTED').first()
+    quote = project.quotes.order_by('-created_at').first()
     schedule = related_or_none(project, 'schedule')
 
     profit = None
