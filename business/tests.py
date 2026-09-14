@@ -187,6 +187,20 @@ class EtigeWorkflowTests(TestCase):
         quote.refresh_from_db()
         self.assertEqual(quote.status, Quote.Status.ACCEPTED)
 
+    def test_legacy_quote_send_email_url_uses_accepted_quote(self):
+        project = self._project('REF-EMAIL-LEGACY', 'Projet Email Legacy')
+        quote = Quote.objects.create(project=project, number='DEV-LEGACY', amount_excl_tax=Decimal('50000'), status=Quote.Status.ACCEPTED)
+        QuoteLine.objects.create(quote=quote, quantity=1, unit='u', designation='Prestation', unit_price=Decimal('50000'))
+
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+
+        response = c.post(f'/projets/{project.id}/devis/envoyer-email/', {})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('DEV-LEGACY', mail.outbox[0].subject)
+
     def test_dg_vs_dt_permissions(self):
         project = self._project('REF-ROLES', 'Projet Rôles', budget=Decimal('1000000'))
 

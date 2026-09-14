@@ -14,6 +14,7 @@ urlpatterns = [
     path('projets/<int:project_id>/devis/', views.quote_create, name='quote-create'),
     path('projets/<int:project_id>/devis/<int:quote_id>/', views.quote_create, name='quote-edit'),
     path('projets/<int:project_id>/devis/<int:quote_id>/pdf/', views.quote_pdf, name='quote-pdf'),
+    path('projets/<int:project_id>/devis/envoyer-email/', views.quote_send_email, name='quote-send-email-legacy'),
     path('projets/<int:project_id>/devis/<int:quote_id>/envoyer-email/', views.quote_send_email, name='quote-send-email'),
     path('projets/<int:project_id>/planning/', views.project_planning, name='project-planning'),
     path('projets/<int:project_id>/planning/pdf/', views.planning_pdf, name='planning-pdf'),
