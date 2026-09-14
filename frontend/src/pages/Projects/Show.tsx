@@ -108,7 +108,7 @@ export default function Show({ project }: any) {
 
     const handleSendEmail = (e: React.FormEvent) => {
         e.preventDefault()
-        postEmail(`/projets/${project.id}/devis/envoyer-email/`, {
+        postEmail(`/projets/${project.id}/devis/${quote.id}/envoyer-email/`, {
             onSuccess: () => setEmailModalOpen(false),
         })
     }
