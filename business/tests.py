@@ -253,6 +253,16 @@ class EtigeWorkflowTests(TestCase):
         c_dg.login(username='dg_user', password='password123')
         self.assertEqual(c_dg.get(f'/projets/{project.id}/modifier/').status_code, 200)
 
+    def test_dashboard_loads_with_quote_statuses(self):
+        project = self._project('REF-DASH', 'Projet dashboard')
+        Quote.objects.create(project=project, number='DEV-DASH', status=Quote.Status.REJECTED)
+
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+        response = c.get('/')
+
+        self.assertEqual(response.status_code, 200)
+
     def test_employee_cannot_delete_client_or_project(self):
         project = self._project('REF-EMP', 'Projet employé')
         c = TestClient()

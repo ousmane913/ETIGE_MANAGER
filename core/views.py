@@ -70,7 +70,7 @@ def dashboard(request):
         'metrics': {
             'clients': Client.objects.count(),
             'projects': Project.objects.count(),
-            'quotesPending': Quote.objects.filter(status=Quote.Status.SENT).count(),
+            'quotesPending': Quote.objects.filter(status=Quote.Status.REJECTED).count(),
             'activeSites': Site.objects.filter(status=Site.Status.IN_PROGRESS).count(),
         },
         'recentProjects': [
