@@ -189,6 +189,7 @@ class EtigeWorkflowTests(TestCase):
 
     def test_legacy_quote_send_email_url_uses_accepted_quote(self):
         project = self._project('REF-EMAIL-LEGACY', 'Projet Email Legacy')
+        Quote.objects.create(project=project, number='DEV-OLD', amount_excl_tax=Decimal('25000'), status=Quote.Status.ACCEPTED)
         quote = Quote.objects.create(project=project, number='DEV-LEGACY', amount_excl_tax=Decimal('50000'), status=Quote.Status.ACCEPTED)
         QuoteLine.objects.create(quote=quote, quantity=1, unit='u', designation='Prestation', unit_price=Decimal('50000'))
 

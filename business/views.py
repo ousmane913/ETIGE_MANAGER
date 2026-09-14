@@ -438,14 +438,13 @@ def quote_pdf(request, project_id, quote_id):
 @require_http_methods(['POST'])
 def quote_send_email(request, project_id, quote_id=None):
     project = get_object_or_404(Project, pk=project_id)
-    quote = get_object_or_404(
-        Quote,
-        project=project,
-        pk=quote_id,
-    ) if quote_id else get_object_or_404(
-        Quote.objects.filter(status=Quote.Status.ACCEPTED).order_by('-created_at'),
-        project=project,
-    )
+    if quote_id:
+        quote = get_object_or_404(Quote, project=project, pk=quote_id)
+    else:
+        quote = project.quotes.filter(status=Quote.Status.ACCEPTED).order_by('-created_at').first()
+        if quote is None:
+            messages.error(request, 'Aucun devis accepté trouvé pour ce projet.')
+            return redirect('project-detail', project.id)
     if not quote:
         messages.error(request, 'Aucun devis trouvé pour ce projet. Veuillez d’abord créer un devis.')
         return redirect('project-detail', project.id)
