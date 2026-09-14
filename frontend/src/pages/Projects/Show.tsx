@@ -248,7 +248,7 @@ export default function Show({ project }: any) {
                             text={quote ? `Devis ${quote.status === 'ACCEPTED' ? 'accepté' : 'refusé'} : ${quote.number}` : 'Chiffrage avec gestion des unités (accessible directement).'}
                             quoteExists={!!quote}
                             onSendEmail={quote ? () => setEmailModalOpen(true) : undefined}
-                            actionText="Gérer les devis"
+                            actionText={quote ? 'Mettre à jour' : 'Renseigner'}
                         />
                         <Step
                             title="3. Planning du projet"
