@@ -65,7 +65,23 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                         </div>
                     )}
 
-                    <div className="grid gap-5 md:grid-cols-3">
+                    <div className="grid gap-5 md:grid-cols-4">
+                        {fields.find((field: any) => field.name === 'client') && (
+                            <label className="text-sm font-semibold">
+                                Client
+                                <select
+                                    className="input"
+                                    value={data.client}
+                                    onChange={(e) => setData('client', e.target.value)}
+                                    required
+                                >
+                                    <option value="">Sélectionner un client</option>
+                                    {fields.find((field: any) => field.name === 'client')?.choices?.map((choice: any) => (
+                                        <option key={choice[0]} value={choice[0]}>{choice[1]}</option>
+                                    ))}
+                                </select>
+                            </label>
+                        )}
                         <label className="text-sm font-semibold">
                             Numéro de devis
                             <input

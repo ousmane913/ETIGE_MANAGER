@@ -1,10 +1,10 @@
 import { Link, usePage } from '@inertiajs/react'
 import React from 'react'
 
-const links = [{ href: '/', label: 'Tableau de bord' }, { href: '/projets/', label: 'Projets' }, { href: '/clients/', label: 'Clients' }]
+const links = [{ href: '/', label: 'Tableau de bord' }, { href: '/projets/', label: 'Projets' }, { href: '/devis-independants/', label: 'Devis indépendants' }, { href: '/clients/', label: 'Clients' }]
 
 // Pages racines qui n'ont pas besoin de bouton retour
-const ROOT_PATHS = ['/', '/projets/', '/clients/']
+const ROOT_PATHS = ['/', '/projets/', '/devis-independants/', '/clients/']
 
 export default function AppLayout({ children, back }: { children: React.ReactNode; back?: string | boolean }) {
   const page = usePage(); const url = page.url; const flash = (page.props as any).flash

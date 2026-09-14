@@ -158,6 +158,45 @@ class QuoteLine(TimestampedModel):
         if self.unit_price < Decimal('0'):
             raise ValidationError({'unit_price': 'Le prix unitaire ne peut pas être négatif.'})
 
+class IndependentQuote(TimestampedModel):
+    class Status(models.TextChoices):
+        ACCEPTED = 'ACCEPTED', 'Accepté'
+        REJECTED = 'REJECTED', 'Refusé'
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='independent_quotes', verbose_name='Client')
+    number = models.CharField(max_length=40)
+    amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, default=0, blank=True)
+    adjusted_amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18)
+    validity_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.ACCEPTED)
+    notes = models.TextField(blank=True)
+
+    @property
+    def amount_incl_tax(self): return self.amount_excl_tax * (1 + self.vat_rate / 100)
+    @property
+    def final_adjusted_amount(self): return self.adjusted_amount_excl_tax if self.adjusted_amount_excl_tax is not None else self.amount_excl_tax
+    @property
+    def client_name(self): return self.client.company_name if self.client_id else ''
+    @property
+    def client_email(self): return self.client.email if self.client_id else ''
+    def __str__(self): return self.number
+
+class IndependentQuoteLine(TimestampedModel):
+    quote = models.ForeignKey(IndependentQuote, on_delete=models.CASCADE, related_name='lines')
+    quantity = models.PositiveIntegerField(default=1)
+    unit = models.CharField('Unité', max_length=30, blank=True)
+    designation = models.CharField(max_length=255)
+    unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    @property
+    def amount(self): return self.quantity * self.unit_price
+    def clean(self):
+        if self.quantity <= 0:
+            raise ValidationError({'quantity': 'La quantité doit être supérieure à zéro.'})
+        if self.unit_price < Decimal('0'):
+            raise ValidationError({'unit_price': 'Le prix unitaire ne peut pas être négatif.'})
+
 class ProjectSchedule(TimestampedModel):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='schedule')
     start_date = models.DateField('Date de début', null=True, blank=True)

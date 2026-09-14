@@ -1,5 +1,5 @@
 from django import forms
-from .models import Client, Project, Survey, Quote, Purchase, Site, ClosureReport, Expense, ProjectSchedule, PlanningTask, ProjectDocument
+from .models import Client, Project, Survey, Quote, IndependentQuote, Purchase, Site, ClosureReport, Expense, ProjectSchedule, PlanningTask, ProjectDocument
 
 class DateInput(forms.DateInput): input_type = 'date'
 class MultipleFileInput(forms.ClearableFileInput): allow_multiple_selected = True
@@ -48,6 +48,11 @@ class QuoteForm(forms.ModelForm):
         model = Quote; fields = ['number', 'validity_date', 'status', 'notes']
         widgets = {'validity_date': DateInput()}
         labels = {'number': 'Numéro de devis', 'validity_date': 'Date de validité', 'status': 'Statut', 'notes': 'Notes'}
+class IndependentQuoteForm(forms.ModelForm):
+    class Meta:
+        model = IndependentQuote; fields = ['client', 'number', 'validity_date', 'status', 'notes']
+        widgets = {'validity_date': DateInput()}
+        labels = {'client': 'Client', 'number': 'Numéro de devis', 'validity_date': 'Date de validité', 'status': 'Statut', 'notes': 'Notes'}
 class PurchaseForm(forms.ModelForm):
     class Meta:
         model = Purchase; fields = ['reference', 'supplier', 'description', 'amount', 'status', 'ordered_on', 'delivered_on']

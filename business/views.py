@@ -13,8 +13,8 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
-from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm, ProjectDocumentForm
-from .models import Client, Project, Survey, Quote, QuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
+from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, IndependentQuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm, ProjectDocumentForm
+from .models import Client, Project, Survey, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
 from .permissions import (
     can_delete_client,
     can_delete_project,
@@ -121,6 +121,168 @@ def projects(request):
         'searchQuery': query,
         **role_flags(request.user),
     })
+
+@login_required
+def independent_quotes(request):
+    query = request.GET.get('q', '').strip()
+    quotes = IndependentQuote.objects.select_related('client').order_by('-created_at')
+    if query:
+        quotes = quotes.filter(
+            models.Q(number__icontains=query) |
+            models.Q(client__company_name__icontains=query)
+        )
+    return render(request, 'IndependentQuotes/Index', {
+        'quotes': [{
+            'id': quote.id,
+            'number': quote.number,
+            'client': quote.client_name,
+            'clientEmail': quote.client_email,
+            'amount': str(quote.final_adjusted_amount),
+            'status': quote.status,
+            'date': quote.created_at.isoformat(),
+        } for quote in quotes],
+        'searchQuery': query,
+    })
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def independent_quote_create(request, quote_id=None):
+    quote = get_object_or_404(IndependentQuote, pk=quote_id) if quote_id else IndependentQuote()
+    form = IndependentQuoteForm(request.POST or None, instance=quote)
+    lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
+    if request.method == 'POST':
+        try:
+            submitted_lines = request.POST.getlist('lines')
+            if len(submitted_lines) == 1 and isinstance(submitted_lines[0], str):
+                submitted_lines = json.loads(submitted_lines[0])
+            if not isinstance(submitted_lines, list):
+                raise ValueError
+            lines = submitted_lines
+        except (ValueError, json.JSONDecodeError):
+            lines = []
+
+    if request.method == 'POST' and form.is_valid():
+        raw_lines = request.POST.getlist('lines')
+        if len(raw_lines) == 1 and isinstance(raw_lines[0], str):
+            try:
+                raw_lines = json.loads(raw_lines[0])
+            except json.JSONDecodeError:
+                raw_lines = []
+        parsed_lines = []
+        try:
+            for index, raw_line in enumerate(raw_lines, start=1):
+                if not isinstance(raw_line, dict) or not str(raw_line.get('designation', '')).strip():
+                    raise ValueError(f'Désignation de la ligne {index} obligatoire.')
+                if not str(raw_line.get('quantity', '')).strip() or not str(raw_line.get('unitPrice', '')).strip():
+                    raise ValueError(f'Quantité et prix de la ligne {index} obligatoires.')
+                quantity = Decimal(str(raw_line['quantity']))
+                if quantity != quantity.to_integral_value():
+                    raise ValueError(f'La quantité de la ligne {index} doit être un nombre entier.')
+                parsed_lines.append(IndependentQuoteLine(
+                    quantity=int(quantity), unit=str(raw_line.get('unit', 'u')).strip() or 'u',
+                    designation=str(raw_line['designation']).strip(), unit_price=Decimal(str(raw_line['unitPrice']))
+                ))
+            if not parsed_lines:
+                raise ValueError('Ajoutez au moins une ligne au devis.')
+            total = sum((line.quantity * line.unit_price for line in parsed_lines), Decimal('0'))
+            with transaction.atomic():
+                record = form.save(commit=False)
+                record.amount_excl_tax = total
+                record.adjusted_amount_excl_tax = total
+                record.full_clean()
+                record.save()
+                record.lines.all().delete()
+                for line in parsed_lines:
+                    line.quote = record
+                    line.full_clean()
+                IndependentQuoteLine.objects.bulk_create(parsed_lines)
+            messages.success(request, 'Devis indépendant enregistré.')
+            return redirect('independent-quotes')
+        except (InvalidOperation, ValueError, ValidationError) as exc:
+            form.add_error(None, str(exc))
+    elif request.method == 'POST':
+        for field_name, field_errors in list(form.errors.items()):
+            for field_error in field_errors:
+                if field_name != '__all__':
+                    form.add_error(None, f'{form.fields[field_name].label} : {field_error}')
+    return render(request, 'Quote/Form', {
+        'title': 'Devis indépendant',
+        'subtitle': 'Devis non lié à un projet',
+        'action': f'/devis-independants/{quote.id}/' if quote.pk else '/devis-independants/nouveau/',
+        'fields': form_props(form, 'Devis indépendant', '', '')['fields'],
+        'errors': errors(form),
+        'lines': lines,
+        'is_management': can_view_financials(request.user),
+        'project': None,
+    })
+
+def _build_independent_quote_pdf_bytes(quote):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    _, height = A4
+    y = height - 25 * mm
+    pdf.setFont('Helvetica-Bold', 16)
+    pdf.drawString(20 * mm, y, 'DEVIS')
+    pdf.setFont('Helvetica', 10)
+    y -= 8 * mm
+    pdf.drawString(20 * mm, y, f'Client : {quote.client_name}')
+    y -= 5 * mm
+    pdf.drawString(20 * mm, y, f'Date de validite : {quote.validity_date.strftime("%d/%m/%Y") if quote.validity_date else "Non indiquee"}')
+    y -= 10 * mm
+    pdf.setFont('Helvetica-Bold', 10)
+    pdf.drawString(20 * mm, y, 'Qte')
+    pdf.drawString(34 * mm, y, 'Unite')
+    pdf.drawString(52 * mm, y, 'Designation')
+    pdf.drawRightString(150 * mm, y, 'Prix unitaire')
+    pdf.drawRightString(195 * mm, y, 'Montant')
+    y -= 6 * mm
+    pdf.setFont('Helvetica', 9)
+    for line in quote.lines.all():
+        pdf.drawString(20 * mm, y, str(line.quantity))
+        pdf.drawString(34 * mm, y, str(line.unit or 'u')[:8])
+        pdf.drawString(52 * mm, y, line.designation[:38])
+        pdf.drawRightString(150 * mm, y, f'{_fmt_fcfa(line.unit_price)} FCFA')
+        pdf.drawRightString(195 * mm, y, f'{_fmt_fcfa(line.amount)} FCFA')
+        y -= 5 * mm
+    y -= 5 * mm
+    pdf.setFont('Helvetica-Bold', 10)
+    pdf.drawRightString(195 * mm, y, f'TOTAL : {_fmt_fcfa(quote.final_adjusted_amount)} FCFA')
+    pdf.save()
+    return buffer.getvalue()
+
+@login_required
+@require_http_methods(['GET'])
+def independent_quote_pdf(request, quote_id):
+    quote = get_object_or_404(IndependentQuote, pk=quote_id)
+    response = HttpResponse(_build_independent_quote_pdf_bytes(quote), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="devis-{quote.number}.pdf"'
+    return response
+
+@login_required
+@require_http_methods(['POST'])
+def independent_quote_send_email(request, quote_id):
+    quote = get_object_or_404(IndependentQuote, pk=quote_id)
+    recipient_email = request.POST.get('email', '').strip() or quote.client_email
+    if not recipient_email:
+        messages.error(request, 'Veuillez renseigner une adresse email pour le client.')
+        return redirect('independent-quotes')
+    try:
+        email = EmailMessage(
+            subject=f'ETIGE - Devis {quote.number}',
+            body=f'Bonjour,\n\nVeuillez trouver ci-joint votre devis {quote.number}.\n\nCordialement,\nL’équipe ETIGE',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[recipient_email],
+        )
+        email.attach(f'devis-{quote.number}.pdf', _build_independent_quote_pdf_bytes(quote), 'application/pdf')
+        email.send(fail_silently=False)
+        messages.success(request, f'Devis envoyé avec succès à {recipient_email}.')
+    except Exception as exc:
+        messages.error(request, f"Erreur lors de l'envoi de l'email : {exc}")
+    return redirect('independent-quotes')
 
 @login_required
 @require_http_methods(['POST'])

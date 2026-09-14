@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, Client as TestClient, RequestFactory
 
 from business.models import (
-    Project, Quote, QuoteLine, Purchase, Site, ClosureReport,
+    Project, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, Site, ClosureReport,
     ProjectSchedule, PlanningTask, generate_next_project_number, Client,
 )
 from business.permissions import ROLE_DG, ROLE_DT, ROLE_EMPLOYEE
@@ -181,6 +181,29 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(quote.notes, 'A conserver')
         self.assertEqual(quote.lines.get().designation, 'Prestation')
         self.assertEqual(quote.lines.get().quantity, 2)
+
+    def test_independent_quote_persists_and_generates_pdf(self):
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+        response = c.post(
+            '/devis-independants/nouveau/',
+            data=json.dumps({
+                'client': str(self.client_entity.id),
+                'number': 'DEV-INDEP-001',
+                'status': Quote.Status.REJECTED,
+                'lines': [{'quantity': '1', 'unit': 'forfait', 'designation': 'Étude', 'unitPrice': '75000'}],
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 302)
+        quote = IndependentQuote.objects.get(number='DEV-INDEP-001')
+        self.assertEqual(quote.client_id, self.client_entity.id)
+        self.assertEqual(quote.lines.get().amount, Decimal('75000'))
+
+        pdf_response = c.get(f'/devis-independants/{quote.id}/pdf/')
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
 
     def test_planning_creation_and_tasks(self):
         project = self._project('REF-PLAN', 'Projet Planning')
