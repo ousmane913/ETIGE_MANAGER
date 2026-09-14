@@ -185,7 +185,7 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(mail.outbox[0].attachments[0][0], 'devis-DEV-001.pdf')
 
         quote.refresh_from_db()
-        self.assertEqual(quote.status, Quote.Status.SENT)
+        self.assertEqual(quote.status, Quote.Status.ACCEPTED)
 
     def test_dg_vs_dt_permissions(self):
         project = self._project('REF-ROLES', 'Projet Rôles', budget=Decimal('1000000'))

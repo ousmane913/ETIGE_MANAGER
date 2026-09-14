@@ -119,8 +119,6 @@ class Survey(TimestampedModel):
 
 class Quote(TimestampedModel):
     class Status(models.TextChoices):
-        DRAFT = 'DRAFT', 'Brouillon'
-        SENT = 'SENT', 'Envoyé'
         ACCEPTED = 'ACCEPTED', 'Accepté'
         REJECTED = 'REJECTED', 'Refusé'
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='quotes')
@@ -129,7 +127,7 @@ class Quote(TimestampedModel):
     adjusted_amount_excl_tax = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18)
     validity_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.SENT)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.ACCEPTED)
     notes = models.TextField(blank=True)
     def clean(self):
         # Le Survey n'est plus obligatoire. S'il existe et a été initié, il doit être validé.
