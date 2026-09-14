@@ -391,15 +391,11 @@ def _build_quote_pdf_bytes(project, quote):
     pdf.drawString(20 * mm, y, 'DEVIS')
     pdf.setFont('Helvetica', 10)
     y -= 8 * mm
-    pdf.drawString(20 * mm, y, f'N° Projet ETIGE : {project.project_number or "-"}')
-    y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Reference Client : {project.reference}')
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Client : {project.client_name}')
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Nom du projet : {project.name}')
-    y -= 5 * mm
-    pdf.drawString(20 * mm, y, f'Numero de devis : {quote.number}')
     y -= 8 * mm
     pdf.drawString(20 * mm, y, f'Date de validite : {quote.validity_date.strftime("%d/%m/%Y") if quote.validity_date else "Non indiquee"}')
     y -= 10 * mm
