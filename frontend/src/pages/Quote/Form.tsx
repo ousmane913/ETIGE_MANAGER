@@ -92,15 +92,6 @@ export default function QuoteForm({ title, subtitle, action, fields, errors, lin
                             />
                         </label>
                         <label className="text-sm font-semibold">
-                            Date de validité
-                            <input
-                                className="input"
-                                type="date"
-                                value={data.validity_date}
-                                onChange={(e) => setData('validity_date', e.target.value)}
-                            />
-                        </label>
-                        <label className="text-sm font-semibold">
                             Statut
                             <select
                                 className="input"

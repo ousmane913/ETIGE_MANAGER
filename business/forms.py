@@ -45,14 +45,12 @@ class SurveyForm(forms.ModelForm):
         labels = {'visit_date': 'Date de la visite', 'findings': 'Constats', 'technical_notes': 'Notes techniques', 'is_validated': 'Validé ?'}
 class QuoteForm(forms.ModelForm):
     class Meta:
-        model = Quote; fields = ['number', 'validity_date', 'status', 'notes']
-        widgets = {'validity_date': DateInput()}
-        labels = {'number': 'Numéro de devis', 'validity_date': 'Date de validité', 'status': 'Statut', 'notes': 'Notes'}
+        model = Quote; fields = ['number', 'status', 'notes']
+        labels = {'number': 'Numéro de devis', 'status': 'Statut', 'notes': 'Notes'}
 class IndependentQuoteForm(forms.ModelForm):
     class Meta:
-        model = IndependentQuote; fields = ['client', 'number', 'validity_date', 'status', 'notes']
-        widgets = {'validity_date': DateInput()}
-        labels = {'client': 'Client', 'number': 'Numéro de devis', 'validity_date': 'Date de validité', 'status': 'Statut', 'notes': 'Notes'}
+        model = IndependentQuote; fields = ['client', 'number', 'status', 'notes']
+        labels = {'client': 'Client', 'number': 'Numéro de devis', 'status': 'Statut', 'notes': 'Notes'}
 class PurchaseForm(forms.ModelForm):
     class Meta:
         model = Purchase; fields = ['reference', 'supplier', 'description', 'amount', 'status', 'ordered_on', 'delivered_on']

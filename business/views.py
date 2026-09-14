@@ -230,8 +230,6 @@ def _build_independent_quote_pdf_bytes(quote):
     pdf.setFont('Helvetica', 10)
     y -= 8 * mm
     pdf.drawString(20 * mm, y, f'Client : {quote.client_name}')
-    y -= 5 * mm
-    pdf.drawString(20 * mm, y, f'Date de validite : {quote.validity_date.strftime("%d/%m/%Y") if quote.validity_date else "Non indiquee"}')
     y -= 10 * mm
     pdf.setFont('Helvetica-Bold', 10)
     pdf.drawString(20 * mm, y, 'Qte')
@@ -558,8 +556,6 @@ def _build_quote_pdf_bytes(project, quote):
     pdf.drawString(20 * mm, y, f'Client : {project.client_name}')
     y -= 5 * mm
     pdf.drawString(20 * mm, y, f'Nom du projet : {project.name}')
-    y -= 8 * mm
-    pdf.drawString(20 * mm, y, f'Date de validite : {quote.validity_date.strftime("%d/%m/%Y") if quote.validity_date else "Non indiquee"}')
     y -= 10 * mm
     pdf.setFont('Helvetica-Bold', 10)
     pdf.drawString(20 * mm, y, 'Qte')
