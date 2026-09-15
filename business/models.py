@@ -11,6 +11,21 @@ class TimestampedModel(models.Model):
     class Meta:
         abstract = True
 
+class ActivityLog(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='activity_logs')
+    action = models.CharField(max_length=80)
+    object_type = models.CharField(max_length=80)
+    object_id = models.CharField(max_length=80, blank=True)
+    description = models.TextField()
+    project = models.ForeignKey('Project', null=True, blank=True, on_delete=models.SET_NULL, related_name='activity_logs')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.action} - {self.description}'
+
 class Client(TimestampedModel):
     company_name = models.CharField('raison sociale', max_length=180)
     contact_name = models.CharField('contact', max_length=120)

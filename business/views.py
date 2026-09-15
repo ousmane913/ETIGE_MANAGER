@@ -14,18 +14,29 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
 from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, IndependentQuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm, ProjectDocumentForm
-from .models import Client, Project, Survey, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
+from .models import ActivityLog, Client, Project, Survey, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
 from .permissions import (
     can_delete_client,
     can_delete_project,
     can_edit_project,
     can_view_financials,
+    can_view_activity_log,
     MSG_DG_ONLY_DELETE_CLIENT,
     MSG_DG_ONLY_DELETE_PROJECT,
     MSG_DG_ONLY_EDIT,
     require_permission,
     role_flags,
 )
+
+def log_activity(request, action, object_type, description, obj=None, project=None):
+    ActivityLog.objects.create(
+        user=request.user if request.user.is_authenticated else None,
+        action=action,
+        object_type=object_type,
+        object_id=str(obj.pk) if obj and obj.pk else '',
+        description=description,
+        project=project,
+    )
 
 def errors(form): return {field: [str(error) for error in field_errors] for field, field_errors in form.errors.items()}
 def form_value(value):
@@ -62,11 +73,36 @@ def clients(request):
     })
 
 @login_required
+@require_permission(can_view_activity_log, 'Seul le Directeur Général (DG) peut consulter le journal.', fallback='dashboard')
+def activity_log(request):
+    query = request.GET.get('q', '').strip()
+    logs = ActivityLog.objects.select_related('user', 'project').all()
+    if query:
+        logs = logs.filter(
+            models.Q(description__icontains=query) |
+            models.Q(action__icontains=query) |
+            models.Q(user__username__icontains=query)
+        )
+    return render(request, 'ActivityLog/Index', {
+        'activities': [{
+            'id': log.id,
+            'date': log.created_at.isoformat(),
+            'user': log.user.get_full_name() or log.user.username if log.user else 'Système',
+            'action': log.action,
+            'description': log.description,
+            'project': log.project.project_number or log.project.reference if log.project else '',
+        } for log in logs[:200]],
+        'searchQuery': query,
+    })
+
+@login_required
 @require_http_methods(['GET', 'POST'])
 def client_create(request):
     form = ClientForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
-        form.save(); messages.success(request, 'Client créé.'); return redirect('clients')
+        client = form.save()
+        log_activity(request, 'Création', 'Client', f'Client créé : {client.company_name}', client)
+        messages.success(request, 'Client créé.'); return redirect('clients')
     return render(request, 'Shared/Form', form_props(form, 'Nouveau client', '/clients/nouveau/', 'Enregistrez les informations du maître d’ouvrage.'))
 
 @login_required
@@ -75,7 +111,8 @@ def client_edit(request, client_id):
     client = get_object_or_404(Client, pk=client_id)
     form = ClientForm(request.POST or None, instance=client)
     if request.method == 'POST' and form.is_valid():
-        form.save()
+        client = form.save()
+        log_activity(request, 'Modification', 'Client', f'Client modifié : {client.company_name}', client)
         messages.success(request, 'Client modifié.')
         return redirect('clients')
     return render(request, 'Shared/Form', form_props(form, 'Modifier le client', f'/clients/{client.id}/modifier/', 'Mettez à jour les informations du client.'))
@@ -90,6 +127,7 @@ def client_delete(request, client_id):
     except ProtectedError:
         messages.error(request, 'Impossible de supprimer ce client : des projets y sont encore liés.')
         return redirect('clients')
+    log_activity(request, 'Suppression', 'Client', f'Client supprimé : {client.company_name}', client)
     messages.success(request, 'Client supprimé.')
     return redirect('clients')
 
@@ -148,6 +186,7 @@ def independent_quotes(request):
 @require_http_methods(['GET', 'POST'])
 def independent_quote_create(request, quote_id=None):
     quote = get_object_or_404(IndependentQuote, pk=quote_id) if quote_id else IndependentQuote()
+    was_existing = bool(quote.pk)
     form = IndependentQuoteForm(request.POST or None, instance=quote)
     lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
     if request.method == 'POST':
@@ -196,6 +235,7 @@ def independent_quote_create(request, quote_id=None):
                     line.quote = record
                     line.full_clean()
                 IndependentQuoteLine.objects.bulk_create(parsed_lines)
+                log_activity(request, 'Modification' if was_existing else 'Création', 'Devis indépendant', f'Devis {record.number} enregistré ({record.get_status_display()})', record)
             messages.success(request, 'Devis indépendant enregistré.')
             return redirect('independent-quotes')
         except (InvalidOperation, ValueError, ValidationError) as exc:
@@ -277,6 +317,7 @@ def independent_quote_send_email(request, quote_id):
         )
         email.attach(f'devis-{quote.number}.pdf', _build_independent_quote_pdf_bytes(quote), 'application/pdf')
         email.send(fail_silently=False)
+        log_activity(request, 'Envoi email', 'Devis indépendant', f'Devis {quote.number} envoyé à {recipient_email}', quote)
         messages.success(request, f'Devis envoyé avec succès à {recipient_email}.')
     except Exception as exc:
         messages.error(request, f"Erreur lors de l'envoi de l'email : {exc}")
@@ -287,7 +328,9 @@ def independent_quote_send_email(request, quote_id):
 @require_permission(can_delete_project, MSG_DG_ONLY_DELETE_PROJECT)
 def project_delete(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
+    project_label = f'{project.project_number} - {project.name}'
     project.delete()
+    log_activity(request, 'Suppression', 'Projet', f'Projet supprimé : {project_label}')
     messages.success(request, 'Projet supprimé.')
     return redirect('projects')
 
@@ -304,6 +347,7 @@ def project_create(request):
         if not is_management:
             project.budget = 0
         project.save()
+        log_activity(request, 'Création', 'Projet', f'Projet créé : {project.project_number} - {project.name}', project=project)
         messages.success(request, f'Projet {project.project_number} créé avec succès.')
         return redirect('project-detail', project.id)
     return render(request, 'Shared/Form', form_props(form, 'Nouveau projet', '/projets/nouveau/', 'Créez un projet avec son numéro ETIGE et sa référence client.'))
@@ -315,7 +359,8 @@ def project_edit(request, project_id):
     project = get_object_or_404(Project, pk=project_id)
     form = ProjectForm(request.POST or None, instance=project)
     if request.method == 'POST' and form.is_valid():
-        form.save()
+        project = form.save()
+        log_activity(request, 'Modification', 'Projet', f'Projet modifié : {project.project_number} - {project.name}', project=project)
         messages.success(request, 'Projet modifié.')
         return redirect('project-detail', project.id)
     return render(request, 'Shared/Form', form_props(form, 'Modifier le projet', f'/projets/{project.id}/modifier/', f'Projet {project.project_number or project.reference} — {project.name}'))
@@ -405,7 +450,9 @@ def _workflow_form(request, project_id, Form, model, title, phase, extra=None):
         record = form.save(commit=False)
         try:
             with transaction.atomic():
+                was_existing = bool(record.pk)
                 record.full_clean(); record.save()
+                log_activity(request, 'Modification' if was_existing else 'Création', title, f'{title} enregistré pour le projet {project.project_number or project.reference}', record, project)
                 if model is Survey:
                     for image in request.FILES.getlist('photo_files'):
                         photo = ProjectPhoto(project=project, category=ProjectPhoto.Category.SURVEY, image=image)
@@ -441,6 +488,7 @@ def quote_create(request, project_id, quote_id=None):
     else:
         count = project.quotes.count() + 1
         quote = Quote(project=project, number=f"{project.project_number or project.reference}-V{count}")
+    was_existing = bool(quote.pk)
     form = QuoteForm(request.POST or None, instance=quote)
     is_management = can_view_financials(request.user)
     lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
@@ -494,6 +542,7 @@ def quote_create(request, project_id, quote_id=None):
                     line.quote = record
                     line.full_clean()
                 QuoteLine.objects.bulk_create(parsed_lines)
+                log_activity(request, 'Modification' if was_existing else 'Création', 'Devis', f'Devis {record.number} enregistré ({record.get_status_display()})', record, project)
                 
                 if project.status == Project.Status.SURVEY:
                     project.status = Project.Status.QUOTATION
@@ -635,6 +684,7 @@ def quote_send_email(request, project_id, quote_id=None):
         )
         email.attach(f"devis-{quote.number}.pdf", pdf_data, 'application/pdf')
         email.send(fail_silently=False)
+        log_activity(request, 'Envoi email', 'Devis', f'Devis {quote.number} envoyé à {recipient_email}', quote, project)
 
 
 
@@ -903,6 +953,7 @@ def document_upload(request, project_id):
         doc.project = project
         doc.uploaded_by = request.user
         doc.save()
+        log_activity(request, 'Création', 'Document', f'Document ajouté : {doc.name}', doc, project)
         messages.success(request, 'Document ajouté avec succès.')
     else:
         messages.error(request, 'Erreur lors de l\'ajout du document.')
@@ -913,6 +964,9 @@ def document_upload(request, project_id):
 def document_delete(request, document_id):
     doc = get_object_or_404(ProjectDocument, pk=document_id)
     project_id = doc.project_id
+    document_name = doc.name
+    project = doc.project
     doc.delete()
+    log_activity(request, 'Suppression', 'Document', f'Document supprimé : {document_name}', project=project)
     messages.success(request, 'Document supprimé.')
     return redirect('project-detail', project_id)

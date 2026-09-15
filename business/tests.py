@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, Client as TestClient, RequestFactory
 
 from business.models import (
-    Project, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, Site, ClosureReport,
+    ActivityLog, Project, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, Site, ClosureReport,
     ProjectSchedule, PlanningTask, generate_next_project_number, Client,
 )
 from business.permissions import ROLE_DG, ROLE_DT, ROLE_EMPLOYEE
@@ -285,6 +285,19 @@ class EtigeWorkflowTests(TestCase):
         response = c.get('/')
 
         self.assertEqual(response.status_code, 200)
+
+    def test_dg_can_view_activity_log_and_employee_cannot(self):
+        ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action de test')
+
+        dg_client = TestClient()
+        dg_client.login(username='dg_user', password='password123')
+        self.assertEqual(dg_client.get('/journal-activite/').status_code, 200)
+
+        employee_client = TestClient()
+        employee_client.login(username='employee_user', password='password123')
+        response = employee_client.get('/journal-activite/')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, '/')
 
     def test_employee_cannot_delete_client_or_project(self):
         project = self._project('REF-EMP', 'Projet employé')

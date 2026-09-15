@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 urlpatterns = [
+    path('journal-activite/', views.activity_log, name='activity-log'),
     path('clients/', views.clients, name='clients'),
     path('clients/nouveau/', views.client_create, name='client-create'),
     path('clients/<int:client_id>/modifier/', views.client_edit, name='client-edit'),

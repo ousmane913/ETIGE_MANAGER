@@ -44,6 +44,9 @@ def can_delete_project(user):
 def can_delete_client(user):
     return is_dg(user)
 
+def can_view_activity_log(user):
+    return is_dg(user)
+
 
 def role_flags(user):
     return {
