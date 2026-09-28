@@ -1,6 +1,7 @@
 import json
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
+from uuid import uuid4
 
 from django.conf import settings
 from django.contrib import messages
@@ -28,6 +29,21 @@ from .permissions import (
     role_flags,
 )
 
+INDEPENDENT_QUOTE_DRAFT_BASE = '/devis-independants/nouveau/'
+
+def independent_quote_draft_key(draft_id):
+    return f'{INDEPENDENT_QUOTE_DRAFT_BASE}?draft={draft_id}'
+
+def normalize_form_draft_key(user, key):
+    if key != INDEPENDENT_QUOTE_DRAFT_BASE:
+        return key
+    legacy_key = independent_quote_draft_key('legacy')
+    existing = FormDraft.objects.filter(user=user, key=key).first()
+    if existing:
+        existing.key = legacy_key
+        existing.save(update_fields=['key'])
+    return legacy_key
+
 def log_activity(request, action, object_type, description, obj=None, project=None):
     ActivityLog.objects.create(
         user=request.user if request.user.is_authenticated else None,
@@ -42,6 +58,7 @@ def discard_form_draft(request):
     key = request.path
     if request.META.get('QUERY_STRING'):
         key = f'{key}?{request.META["QUERY_STRING"]}'
+    key = normalize_form_draft_key(request.user, key)
     FormDraft.objects.filter(user=request.user, key=key).delete()
 
 @login_required
@@ -57,6 +74,7 @@ def form_draft(request):
             return JsonResponse({'error': 'Requête invalide.'}, status=400)
     if not key or not key.startswith('/') or key.startswith('//') or len(key) > 255:
         return JsonResponse({'error': 'Clé de formulaire invalide.'}, status=400)
+    key = normalize_form_draft_key(request.user, key)
     if request.method == 'GET':
         draft = FormDraft.objects.filter(user=request.user, key=key).first()
         return JsonResponse({'data': draft.data if draft else None})
@@ -195,6 +213,7 @@ def projects(request):
 
 @login_required
 def independent_quotes(request):
+    normalize_form_draft_key(request.user, INDEPENDENT_QUOTE_DRAFT_BASE)
     query = request.GET.get('q', '').strip()
     quotes = IndependentQuote.objects.select_related('client').order_by('-created_at')
     if query:
@@ -202,6 +221,23 @@ def independent_quotes(request):
             models.Q(number__icontains=query) |
             models.Q(client__company_name__icontains=query)
         )
+    drafts = []
+    draft_prefix = f'{INDEPENDENT_QUOTE_DRAFT_BASE}?draft='
+    for draft in FormDraft.objects.filter(user=request.user, key__startswith=draft_prefix).order_by('-updated_at'):
+        draft_id = draft.key[len(draft_prefix):]
+        data = draft.data if isinstance(draft.data, dict) else {}
+        client = Client.objects.filter(pk=data.get('client')).first() if data.get('client') else None
+        try:
+            amount = sum((Decimal(str(line.get('quantity', '0') or '0')) * Decimal(str(line.get('unitPrice', '0') or '0')) for line in data.get('lines', []) if isinstance(line, dict)), Decimal('0'))
+        except (InvalidOperation, TypeError, ValueError):
+            amount = Decimal('0')
+        drafts.append({
+            'id': draft_id,
+            'number': data.get('number') or 'Brouillon sans numéro',
+            'client': client.company_name if client else 'Client non sélectionné',
+            'amount': str(amount),
+            'updatedAt': draft.updated_at.isoformat(),
+        })
     return render(request, 'IndependentQuotes/Index', {
         'quotes': [{
             'id': quote.id,
@@ -212,16 +248,36 @@ def independent_quotes(request):
             'status': quote.status,
             'date': quote.created_at.isoformat(),
         } for quote in quotes],
+        'drafts': drafts,
         'searchQuery': query,
     })
 
 @login_required
 @require_http_methods(['GET', 'POST'])
 def independent_quote_create(request, quote_id=None):
+    draft_id = request.GET.get('draft', '') if quote_id is None else ''
+    if quote_id is None and not draft_id:
+        if request.method == 'POST':
+            draft_id = 'legacy'
+        else:
+            if FormDraft.objects.filter(user=request.user, key=independent_quote_draft_key('legacy')).exists() or FormDraft.objects.filter(user=request.user, key=INDEPENDENT_QUOTE_DRAFT_BASE).exists():
+                draft_id = 'legacy'
+            else:
+                draft_id = uuid4().hex
+            return redirect(f'{INDEPENDENT_QUOTE_DRAFT_BASE}?draft={draft_id}')
+    if draft_id and (draft_id != 'legacy' and (len(draft_id) != 32 or any(char not in '0123456789abcdef' for char in draft_id.lower()))):
+        return redirect('independent-quotes')
     quote = get_object_or_404(IndependentQuote, pk=quote_id) if quote_id else IndependentQuote()
     was_existing = bool(quote.pk)
     form = IndependentQuoteForm(request.POST or None, instance=quote)
     lines = [{'quantity': str(line.quantity), 'unit': line.unit or 'u', 'designation': line.designation, 'unitPrice': str(line.unit_price)} for line in quote.lines.all()] if quote.pk else []
+    if draft_id and request.method == 'GET':
+        draft = FormDraft.objects.filter(user=request.user, key=independent_quote_draft_key(draft_id)).first()
+        if draft and isinstance(draft.data, dict):
+            for field_name in ('client', 'number', 'status', 'notes'):
+                if field_name in draft.data:
+                    form.initial[field_name] = draft.data[field_name]
+            lines = draft.data.get('lines', lines)
     if request.method == 'POST':
         try:
             submitted_lines = request.POST.getlist('lines')
@@ -282,13 +338,22 @@ def independent_quote_create(request, quote_id=None):
     return render(request, 'Quote/Form', {
         'title': 'Devis indépendant',
         'subtitle': 'Devis non lié à un projet',
-        'action': f'/devis-independants/{quote.id}/' if quote.pk else '/devis-independants/nouveau/',
+        'action': f'/devis-independants/{quote.id}/' if quote.pk else f'{INDEPENDENT_QUOTE_DRAFT_BASE}?draft={draft_id}',
         'fields': form_props(form, 'Devis indépendant', '', '')['fields'],
         'errors': errors(form),
         'lines': lines,
         'is_management': can_view_financials(request.user),
         'project': None,
     })
+
+@login_required
+@require_http_methods(['POST'])
+def independent_quote_draft_delete(request, draft_id):
+    if draft_id != 'legacy' and (len(draft_id) != 32 or any(char not in '0123456789abcdef' for char in draft_id.lower())):
+        return redirect('independent-quotes')
+    FormDraft.objects.filter(user=request.user, key=independent_quote_draft_key(draft_id)).delete()
+    messages.success(request, 'Brouillon supprimé.')
+    return redirect('independent-quotes')
 
 def _build_independent_quote_pdf_bytes(quote):
     from reportlab.lib.pagesizes import A4

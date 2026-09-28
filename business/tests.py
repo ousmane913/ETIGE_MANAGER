@@ -185,7 +185,7 @@ class EtigeWorkflowTests(TestCase):
         self.assertIsNone(draft_response.json()['data'])
 
     def test_form_draft_is_persisted_and_private_to_user(self):
-        key = '/devis-independants/nouveau/'
+        key = '/clients/nouveau/'
         payload = {'key': key, 'data': {'number': 'BROUILLON-01', 'notes': 'Travail en cours', 'lines': [{'designation': 'Étude'}]}}
         dg_client = TestClient()
         dg_client.login(username='dg_user', password='password123')
@@ -197,6 +197,34 @@ class EtigeWorkflowTests(TestCase):
         employee_client = TestClient()
         employee_client.login(username='employee_user', password='password123')
         self.assertIsNone(employee_client.get(f'/form-drafts/?key={key}').json()['data'])
+
+    def test_independent_quote_legacy_draft_is_preserved_and_named(self):
+        legacy_key = '/devis-independants/nouveau/'
+        FormDraft.objects.create(user=self.dg_user, key=legacy_key, data={'number': 'DEV001', 'client': str(self.client_entity.id), 'lines': [{'designation': 'Cornière'}]})
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+
+        response = c.get(f'/form-drafts/?key={legacy_key}')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['number'], 'DEV001')
+        self.assertTrue(FormDraft.objects.filter(user=self.dg_user, key=f'{legacy_key}?draft=legacy').exists())
+
+    def test_independent_quote_drafts_can_be_deleted_individually(self):
+        first_id = 'a' * 32
+        second_id = 'b' * 32
+        first_key = f'/devis-independants/nouveau/?draft={first_id}'
+        second_key = f'/devis-independants/nouveau/?draft={second_id}'
+        first = FormDraft.objects.create(user=self.dg_user, key=first_key, data={'number': 'DEV-FIRST'})
+        second = FormDraft.objects.create(user=self.dg_user, key=second_key, data={'number': 'DEV-SECOND'})
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+
+        response = c.post(f'/devis-independants/brouillons/{first_id}/supprimer/')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(FormDraft.objects.filter(pk=first.pk).exists())
+        self.assertTrue(FormDraft.objects.filter(pk=second.pk).exists())
 
     def test_independent_quote_persists_and_generates_pdf(self):
         c = TestClient()

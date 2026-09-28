@@ -8,6 +8,7 @@ urlpatterns = [
     path('clients/<int:client_id>/modifier/', views.client_edit, name='client-edit'),
     path('clients/<int:client_id>/supprimer/', views.client_delete, name='client-delete'),
     path('devis-independants/', views.independent_quotes, name='independent-quotes'),
+    path('devis-independants/brouillons/<slug:draft_id>/supprimer/', views.independent_quote_draft_delete, name='independent-quote-draft-delete'),
     path('devis-independants/nouveau/', views.independent_quote_create, name='independent-quote-create'),
     path('devis-independants/<int:quote_id>/', views.independent_quote_create, name='independent-quote-edit'),
     path('devis-independants/<int:quote_id>/pdf/', views.independent_quote_pdf, name='independent-quote-pdf'),

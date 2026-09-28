@@ -10,7 +10,20 @@ function SendQuoteButton({ quote }: any) {
     )
 }
 
-export default function IndependentQuotes({ quotes, searchQuery }: any) {
+function DeleteDraftButton({ draft }: any) {
+    const { post, processing } = useForm({})
+    return (
+        <form onSubmit={(event) => { event.preventDefault(); post(`/devis-independants/brouillons/${draft.id}/supprimer/`) }}>
+            <button type="submit" disabled={processing} className="font-semibold text-red-700 disabled:opacity-50">Supprimer</button>
+        </form>
+    )
+}
+
+export default function IndependentQuotes({ quotes, drafts = [], searchQuery }: any) {
+    const startNewDraft = () => {
+        window.location.href = `/devis-independants/nouveau/?draft=${crypto.randomUUID()}`
+    }
+
     return (
         <AppLayout>
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -18,8 +31,42 @@ export default function IndependentQuotes({ quotes, searchQuery }: any) {
                     <h2 className="text-3xl font-bold">Devis indépendants</h2>
                     <p className="mt-1 text-slate-500">Devis non liés à un projet.</p>
                 </div>
-                <Link href="/devis-independants/nouveau/" className="btn-primary">+ Nouveau devis</Link>
+                <button type="button" onClick={startNewDraft} className="btn-primary">+ Nouveau devis</button>
             </div>
+            {drafts.length > 0 && (
+                <section className="mb-6">
+                    <h3 className="mb-3 text-lg font-bold">Brouillons à reprendre</h3>
+                    <div className="card overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-left text-sm">
+                            <thead>
+                                <tr className="border-b border-slate-200 text-slate-500">
+                                    <th className="p-3">Devis</th>
+                                    <th className="p-3">Client</th>
+                                    <th className="p-3">Montant saisi</th>
+                                    <th className="p-3">Dernière modification</th>
+                                    <th className="p-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {drafts.map((draft: any) => (
+                                    <tr key={draft.id} className="border-b border-slate-100">
+                                        <td className="p-3 font-semibold">{draft.number}</td>
+                                        <td className="p-3">{draft.client}</td>
+                                        <td className="p-3">{Number(draft.amount).toLocaleString('fr-FR')} FCFA</td>
+                                        <td className="p-3">{new Date(draft.updatedAt).toLocaleString('fr-FR')}</td>
+                                        <td className="p-3 text-right">
+                                            <div className="flex justify-end gap-4">
+                                                <Link href={`/devis-independants/nouveau/?draft=${draft.id}`} className="font-semibold text-amber-700">Reprendre</Link>
+                                                <DeleteDraftButton draft={draft} />
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
             <form method="get" className="mb-5 flex gap-3">
                 <input className="input max-w-md" name="q" defaultValue={searchQuery} placeholder="Rechercher un devis ou un client" />
                 <button className="btn-muted" type="submit">Rechercher</button>
