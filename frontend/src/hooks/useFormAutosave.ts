@@ -10,6 +10,8 @@ export function useFormAutosave(key: string, data: any, setData: any, enabled = 
     const dataRef = useRef(data)
     const baselineRef = useRef(JSON.stringify(data))
     const excludedRef = useRef(excludedKeys)
+    const timeoutRef = useRef<number | null>(null)
+    const pendingSaveRef = useRef<Promise<Response> | null>(null)
 
     useEffect(() => {
         dataRef.current = data
@@ -62,8 +64,10 @@ export function useFormAutosave(key: string, data: any, setData: any, enabled = 
                 },
                 body: JSON.stringify({ key, data: draft }),
             })
-        const timeout = window.setTimeout(() => {
-            saveDraft()
+        timeoutRef.current = window.setTimeout(() => {
+            timeoutRef.current = null
+            pendingSaveRef.current = saveDraft()
+            pendingSaveRef.current
                 .then((response) => {
                     if (!response.ok) throw new Error('draft save failed')
                     setStatus('Brouillon enregistré automatiquement')
@@ -72,20 +76,26 @@ export function useFormAutosave(key: string, data: any, setData: any, enabled = 
         }, 700)
         window.addEventListener('pagehide', saveDraft)
         return () => {
-            window.clearTimeout(timeout)
+            if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current)
+            timeoutRef.current = null
             window.removeEventListener('pagehide', saveDraft)
         }
     }, [data, enabled, key, loaded])
 
-    const clearDraft = () => fetch('/form-drafts/', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': decodeURIComponent(csrfToken()),
-        },
-        body: JSON.stringify({ key, delete: true }),
-    })
+    const clearDraft = async () => {
+        if (timeoutRef.current !== null) window.clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+        if (pendingSaveRef.current) await pendingSaveRef.current.catch(() => undefined)
+        return fetch('/form-drafts/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': decodeURIComponent(csrfToken()),
+            },
+            body: JSON.stringify({ key, delete: true }),
+        })
+    }
 
     return { autosaveStatus: status, clearDraft }
 }
