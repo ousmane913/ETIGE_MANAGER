@@ -249,6 +249,22 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response['Content-Type'], 'application/pdf')
 
+    def test_independent_quote_email_uses_professional_sender(self):
+        quote = IndependentQuote.objects.create(
+            client=self.client_entity,
+            number='DEV-MAIL-001',
+            status=IndependentQuote.Status.ACCEPTED,
+        )
+        c = TestClient()
+        c.login(username='dg_user', password='password123')
+
+        response = c.post(f'/devis-independants/{quote.id}/envoyer-email/')
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].from_email, 'ETIGE <info@etige-services.ci>')
+        self.assertIn('info@etige-services.ci', mail.outbox[0].body)
+
     def test_planning_creation_and_tasks(self):
         project = self._project('REF-PLAN', 'Projet Planning')
         schedule = ProjectSchedule.objects.create(project=project, notes='Planning initial')
@@ -285,6 +301,8 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['dupont@clienttest.ci'])
+        self.assertEqual(mail.outbox[0].from_email, 'ETIGE <info@etige-services.ci>')
+        self.assertIn('info@etige-services.ci', mail.outbox[0].body)
         self.assertIn('DEV-001', mail.outbox[0].subject)
         self.assertEqual(mail.outbox[0].attachments[0][0], 'devis-DEV-001.pdf')
 

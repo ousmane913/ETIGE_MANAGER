@@ -410,7 +410,7 @@ def independent_quote_send_email(request, quote_id):
     try:
         email = EmailMessage(
             subject=f'ETIGE - Devis {quote.number}',
-            body=f'Bonjour,\n\nVeuillez trouver ci-joint votre devis {quote.number}.\n\nCordialement,\nL’équipe ETIGE',
+            body=f'Bonjour,\n\nVeuillez trouver ci-joint votre devis {quote.number}.\n\nCordialement,\nL’équipe ETIGE\ninfo@etige-services.ci',
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[recipient_email],
         )
@@ -778,6 +778,7 @@ def quote_send_email(request, project_id, quote_id=None):
             f"Restant à votre entière disposition pour tout complément d'information.\n\n"
             f"Cordialement,\n"
             f"L'équipe ETIGE\n"
+            f"info@etige-services.ci\n"
         )
         email = EmailMessage(
             subject=subject,
