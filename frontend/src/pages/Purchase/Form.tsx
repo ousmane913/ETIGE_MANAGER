@@ -1,5 +1,6 @@
 import AppLayout from '../../layouts/AppLayout'
 import { useForm } from '@inertiajs/react'
+import { useFormAutosave } from '../../hooks/useFormAutosave'
 
 function amount(line: any) {
     return Number(line.quantity || 0) * Number(line.unitPrice || 0)
@@ -19,6 +20,7 @@ export default function PurchaseForm({ title, subtitle, action, fields, errors, 
         ...initialFields,
         lines: normalizedInitialLines
     })
+    const { autosaveStatus, clearDraft } = useFormAutosave(action, data, setData)
 
     const total = data.lines.reduce((sum: number, line: any) => sum + amount(line), 0)
     const updateLine = (index: number, key: string, value: string) =>
@@ -30,7 +32,10 @@ export default function PurchaseForm({ title, subtitle, action, fields, errors, 
 
     const submit = (event: React.FormEvent) => {
         event.preventDefault()
-        post(action, { transform: (formData) => ({ ...formData, lines: JSON.stringify(formData.lines) }) })
+        post(action, {
+            transform: (formData) => ({ ...formData, lines: JSON.stringify(formData.lines) }),
+            onSuccess: () => { void clearDraft() },
+        })
     }
 
     return (
@@ -203,6 +208,7 @@ export default function PurchaseForm({ title, subtitle, action, fields, errors, 
 
                     <div className="mt-7 flex flex-col sm:flex-row items-end sm:items-center justify-between border-t border-slate-200 pt-5">
                         <div className="text-right w-full">
+                            <p className="text-xs text-slate-500" role="status">{autosaveStatus}</p>
                             <p className="text-sm text-slate-500">Montant total des achats</p>
                             <p className="text-2xl font-bold text-slate-900">{total.toLocaleString('fr-FR')} FCFA</p>
                             <button disabled={processing} className="btn-primary mt-3">

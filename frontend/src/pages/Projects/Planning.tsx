@@ -1,5 +1,6 @@
 import AppLayout from '../../layouts/AppLayout'
 import { useForm, Link } from '@inertiajs/react'
+import { useFormAutosave } from '../../hooks/useFormAutosave'
 
 export default function Planning({ project, schedule, tasks: initialTasks, statusChoices }: any) {
     const { data, setData, post, processing } = useForm({
@@ -10,6 +11,7 @@ export default function Planning({ project, schedule, tasks: initialTasks, statu
             ? initialTasks
             : [{ name: '', description: '', startDate: '', endDate: '', assignedTo: '', status: 'TODO' }]
     })
+    const { autosaveStatus, clearDraft } = useFormAutosave(`/projets/${project.id}/planning/`, data, setData)
 
     const updateTask = (index: number, key: string, value: string) => {
         setData('tasks', data.tasks.map((task: any, idx: number) =>
@@ -34,7 +36,8 @@ export default function Planning({ project, schedule, tasks: initialTasks, statu
             transform: (formData) => ({
                 ...formData,
                 tasks: JSON.stringify(formData.tasks)
-            })
+            }),
+            onSuccess: () => { void clearDraft() },
         })
     }
 
@@ -89,6 +92,7 @@ export default function Planning({ project, schedule, tasks: initialTasks, statu
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
+                    <p className="text-xs text-slate-500" role="status">{autosaveStatus}</p>
                     {/* Cadre dates globales & déroulement global */}
                     <div className="card">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">

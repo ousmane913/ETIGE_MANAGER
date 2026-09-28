@@ -1,6 +1,7 @@
 import AppLayout from '../../layouts/AppLayout'
 import { useForm } from '@inertiajs/react'
 import { useEffect } from 'react'
+import { useFormAutosave } from '../../hooks/useFormAutosave'
 
 function statusForProgress(progress: unknown) {
     const value = Number(progress)
@@ -20,6 +21,7 @@ export default function FormPage({ title, subtitle, action, fields, errors }: an
     const isSiteForm = fields.some((field: any) => field.name === 'progress') && fields.some((field: any) => field.name === 'status')
     const hasFiles = fields.some((field: any) => field.type === 'file')
     const { data, setData, post, processing } = useForm(initial)
+    useFormAutosave(action, data, setData, true, fields.filter((field: any) => field.type === 'file').map((field: any) => field.name))
     useEffect(() => {
         if (isSiteForm) {
             const progress = normalizeProgress(data.progress)

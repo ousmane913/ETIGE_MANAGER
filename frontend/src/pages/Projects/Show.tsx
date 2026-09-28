@@ -2,6 +2,7 @@ import AppLayout from '../../layouts/AppLayout'
 import { Link, useForm } from '@inertiajs/react'
 import Status from '../../components/Status'
 import { useState } from 'react'
+import { useFormAutosave } from '../../hooks/useFormAutosave'
 
 function Step({ title, done, href, text, pdfHref, onSendEmail, quoteExists, planningExists, planningPdfHref, actionText }: any) {
     const downloadHref = pdfHref || (title.includes('Devis') ? href.replace('/devis/', '/devis/pdf/') : null)
@@ -87,18 +88,21 @@ export default function Show({ project }: any) {
     const { data: emailData, setData: setEmailData, post: postEmail, processing: emailProcessing } = useForm({
         email: project.clientEmail || '',
     })
+    const { clearDraft: clearEmailDraft } = useFormAutosave(`/projets/${project.id}/email-devis`, emailData, setEmailData)
     const [fileModalOpen, setFileModalOpen] = useState(false)
     const { data: fileData, setData: setFileData, post: postFile, processing: fileProcessing } = useForm({
         name: '',
         category: 'OTHER',
         file: null as any
     })
+    const { clearDraft: clearFileDraft } = useFormAutosave(`/projets/${project.id}/documents`, fileData, setFileData, true, ['file'])
     
     const handleFileUpload = (e: React.FormEvent) => {
         e.preventDefault()
         postFile(`/projets/${project.id}/documents/`, {
             forceFormData: true,
             onSuccess: () => {
+                void clearFileDraft()
                 setFileModalOpen(false)
                 setFileData('name', '')
                 setFileData('file', null)
@@ -109,7 +113,7 @@ export default function Show({ project }: any) {
     const handleSendEmail = (e: React.FormEvent) => {
         e.preventDefault()
         postEmail(`/projets/${project.id}/devis/${quote.id}/envoyer-email/`, {
-            onSuccess: () => setEmailModalOpen(false),
+            onSuccess: () => { setEmailModalOpen(false); void clearEmailDraft() },
         })
     }
 

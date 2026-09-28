@@ -26,6 +26,15 @@ class ActivityLog(models.Model):
     def __str__(self):
         return f'{self.action} - {self.description}'
 
+class FormDraft(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='form_drafts')
+    key = models.CharField(max_length=255)
+    data = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'key'], name='unique_user_form_draft')]
+
 class Client(TimestampedModel):
     company_name = models.CharField('raison sociale', max_length=180)
     contact_name = models.CharField('contact', max_length=120)

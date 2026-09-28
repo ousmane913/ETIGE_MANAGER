@@ -9,12 +9,12 @@ from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.core.mail import EmailMessage
 from django.db import transaction, models
 from django.db.models.deletion import ProtectedError
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 from inertia import render
 from .forms import ClientForm, ProjectForm, SurveyForm, QuoteForm, IndependentQuoteForm, PurchaseForm, SiteForm, ClosureReportForm, ExpenseForm, ProjectScheduleForm, ProjectDocumentForm
-from .models import ActivityLog, Client, Project, Survey, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
+from .models import ActivityLog, FormDraft, Client, Project, Survey, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, PurchaseLine, Site, ClosureReport, ProjectPhoto, ProjectDocument, Expense, ProjectSchedule, PlanningTask, peek_next_project_number
 from .permissions import (
     can_delete_client,
     can_delete_project,
@@ -37,6 +37,37 @@ def log_activity(request, action, object_type, description, obj=None, project=No
         description=description,
         project=project,
     )
+
+def discard_form_draft(request):
+    key = request.path
+    if request.META.get('QUERY_STRING'):
+        key = f'{key}?{request.META["QUERY_STRING"]}'
+    FormDraft.objects.filter(user=request.user, key=key).delete()
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def form_draft(request):
+    key = request.GET.get('key', '') if request.method == 'GET' else ''
+    payload = {}
+    if request.method == 'POST':
+        try:
+            payload = json.loads(request.body or '{}')
+            key = payload.get('key', '')
+        except (json.JSONDecodeError, AttributeError):
+            return JsonResponse({'error': 'Requête invalide.'}, status=400)
+    if not key or not key.startswith('/') or key.startswith('//') or len(key) > 255:
+        return JsonResponse({'error': 'Clé de formulaire invalide.'}, status=400)
+    if request.method == 'GET':
+        draft = FormDraft.objects.filter(user=request.user, key=key).first()
+        return JsonResponse({'data': draft.data if draft else None})
+    if payload.get('delete'):
+        FormDraft.objects.filter(user=request.user, key=key).delete()
+        return JsonResponse({'saved': False})
+    data = payload.get('data')
+    if not isinstance(data, dict):
+        return JsonResponse({'error': 'Données de formulaire invalides.'}, status=400)
+    FormDraft.objects.update_or_create(user=request.user, key=key, defaults={'data': data})
+    return JsonResponse({'saved': True})
 
 def errors(form): return {field: [str(error) for error in field_errors] for field, field_errors in form.errors.items()}
 def form_value(value):
@@ -101,6 +132,7 @@ def client_create(request):
     form = ClientForm(request.POST or None)
     if request.method == 'POST' and form.is_valid():
         client = form.save()
+        discard_form_draft(request)
         log_activity(request, 'Création', 'Client', f'Client créé : {client.company_name}', client)
         messages.success(request, 'Client créé.'); return redirect('clients')
     return render(request, 'Shared/Form', form_props(form, 'Nouveau client', '/clients/nouveau/', 'Enregistrez les informations du maître d’ouvrage.'))
@@ -112,6 +144,7 @@ def client_edit(request, client_id):
     form = ClientForm(request.POST or None, instance=client)
     if request.method == 'POST' and form.is_valid():
         client = form.save()
+        discard_form_draft(request)
         log_activity(request, 'Modification', 'Client', f'Client modifié : {client.company_name}', client)
         messages.success(request, 'Client modifié.')
         return redirect('clients')
@@ -235,6 +268,7 @@ def independent_quote_create(request, quote_id=None):
                     line.quote = record
                     line.full_clean()
                 IndependentQuoteLine.objects.bulk_create(parsed_lines)
+                discard_form_draft(request)
                 log_activity(request, 'Modification' if was_existing else 'Création', 'Devis indépendant', f'Devis {record.number} enregistré ({record.get_status_display()})', record)
             messages.success(request, 'Devis indépendant enregistré.')
             return redirect('independent-quotes')
@@ -347,6 +381,7 @@ def project_create(request):
         if not is_management:
             project.budget = 0
         project.save()
+        discard_form_draft(request)
         log_activity(request, 'Création', 'Projet', f'Projet créé : {project.project_number} - {project.name}', project=project)
         messages.success(request, f'Projet {project.project_number} créé avec succès.')
         return redirect('project-detail', project.id)
@@ -360,6 +395,7 @@ def project_edit(request, project_id):
     form = ProjectForm(request.POST or None, instance=project)
     if request.method == 'POST' and form.is_valid():
         project = form.save()
+        discard_form_draft(request)
         log_activity(request, 'Modification', 'Projet', f'Projet modifié : {project.project_number} - {project.name}', project=project)
         messages.success(request, 'Projet modifié.')
         return redirect('project-detail', project.id)
@@ -452,6 +488,7 @@ def _workflow_form(request, project_id, Form, model, title, phase, extra=None):
             with transaction.atomic():
                 was_existing = bool(record.pk)
                 record.full_clean(); record.save()
+                discard_form_draft(request)
                 log_activity(request, 'Modification' if was_existing else 'Création', title, f'{title} enregistré pour le projet {project.project_number or project.reference}', record, project)
                 if model is Survey:
                     for image in request.FILES.getlist('photo_files'):
@@ -542,6 +579,7 @@ def quote_create(request, project_id, quote_id=None):
                     line.quote = record
                     line.full_clean()
                 QuoteLine.objects.bulk_create(parsed_lines)
+                discard_form_draft(request)
                 log_activity(request, 'Modification' if was_existing else 'Création', 'Devis', f'Devis {record.number} enregistré ({record.get_status_display()})', record, project)
                 
                 if project.status == Project.Status.SURVEY:
@@ -739,6 +777,7 @@ def project_planning(request, project_id):
                     project.site.progress = progress
                     project.site.save()
 
+                    discard_form_draft(request)
             messages.success(request, 'Planning enregistré avec succès.')
             return redirect('project-detail', project.id)
         except Exception as exc:
@@ -901,6 +940,7 @@ def purchase_create(request, project_id, purchase_id=None):
                     line.purchase = record
                     line.full_clean()
                 PurchaseLine.objects.bulk_create(parsed_lines)
+                discard_form_draft(request)
                 
                 if record.status == Purchase.Status.RECEIVED:
                     project.status = Project.Status.SITE

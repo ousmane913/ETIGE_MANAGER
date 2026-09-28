@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase, Client as TestClient, RequestFactory
 
 from business.models import (
-    ActivityLog, Project, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, Site, ClosureReport,
+    ActivityLog, FormDraft, Project, Quote, QuoteLine, IndependentQuote, IndependentQuoteLine, Purchase, Site, ClosureReport,
     ProjectSchedule, PlanningTask, generate_next_project_number, Client,
 )
 from business.permissions import ROLE_DG, ROLE_DT, ROLE_EMPLOYEE
@@ -181,6 +181,22 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(quote.notes, 'A conserver')
         self.assertEqual(quote.lines.get().designation, 'Prestation')
         self.assertEqual(quote.lines.get().quantity, 2)
+        draft_response = c.get(f'/form-drafts/?key=/projets/{project.id}/devis/')
+        self.assertIsNone(draft_response.json()['data'])
+
+    def test_form_draft_is_persisted_and_private_to_user(self):
+        key = '/devis-independants/nouveau/'
+        payload = {'key': key, 'data': {'number': 'BROUILLON-01', 'notes': 'Travail en cours', 'lines': [{'designation': 'Étude'}]}}
+        dg_client = TestClient()
+        dg_client.login(username='dg_user', password='password123')
+        save_response = dg_client.post('/form-drafts/', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(save_response.status_code, 200)
+        self.assertEqual(FormDraft.objects.get(user=self.dg_user, key=key).data['number'], 'BROUILLON-01')
+        self.assertEqual(dg_client.get(f'/form-drafts/?key={key}').json()['data']['notes'], 'Travail en cours')
+
+        employee_client = TestClient()
+        employee_client.login(username='employee_user', password='password123')
+        self.assertIsNone(employee_client.get(f'/form-drafts/?key={key}').json()['data'])
 
     def test_independent_quote_persists_and_generates_pdf(self):
         c = TestClient()
