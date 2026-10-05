@@ -4,6 +4,7 @@ urlpatterns = [
     path('form-drafts/', views.form_draft, name='form-draft'),
     path('journal-activite/', views.activity_log, name='activity-log'),
     path('journal-activite/supprimer/', views.activity_log_delete, name='activity-log-delete'),
+    path('journal-activite/<int:log_id>/supprimer/', views.activity_log_entry_delete, name='activity-log-entry-delete'),
     path('clients/', views.clients, name='clients'),
     path('clients/nouveau/', views.client_create, name='client-create'),
     path('clients/<int:client_id>/modifier/', views.client_edit, name='client-edit'),

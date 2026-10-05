@@ -362,21 +362,32 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(response.url, '/')
 
     def test_dg_and_admin_can_delete_activity_log_but_employee_cannot(self):
-        log = ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action de test')
         admin_user = User.objects.create_user(username='admin_user', password='password123', is_staff=True)
 
         for user in (self.dg_user, admin_user):
+            log = ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action à supprimer')
+            retained_log = ActivityLog.objects.create(user=self.dg_user, action='Modification', object_type='Test', description='Action à conserver')
             client = TestClient()
             client.force_login(user)
             self.assertEqual(client.get('/journal-activite/').status_code, 200)
-            self.assertEqual(client.post('/journal-activite/supprimer/').status_code, 302)
+            self.assertEqual(client.post(f'/journal-activite/{log.pk}/supprimer/').status_code, 302)
             self.assertFalse(ActivityLog.objects.filter(pk=log.pk).exists())
-            log = ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action de test')
+            self.assertTrue(ActivityLog.objects.filter(pk=retained_log.pk).exists())
 
+        log = ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action protégée')
         employee_client = TestClient()
         employee_client.force_login(self.employee_user)
-        self.assertEqual(employee_client.post('/journal-activite/supprimer/').status_code, 302)
+        self.assertEqual(employee_client.post(f'/journal-activite/{log.pk}/supprimer/').status_code, 302)
         self.assertTrue(ActivityLog.objects.filter(pk=log.pk).exists())
+
+    def test_dg_can_clear_entire_activity_log(self):
+        ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action 1')
+        ActivityLog.objects.create(user=self.dg_user, action='Modification', object_type='Test', description='Action 2')
+        client = TestClient()
+        client.force_login(self.dg_user)
+
+        self.assertEqual(client.post('/journal-activite/supprimer/').status_code, 302)
+        self.assertFalse(ActivityLog.objects.exists())
 
     def test_employee_cannot_delete_client_or_project(self):
         project = self._project('REF-EMP', 'Projet employé')

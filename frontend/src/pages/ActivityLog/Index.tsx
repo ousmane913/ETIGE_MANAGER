@@ -3,10 +3,16 @@ import { useForm } from '@inertiajs/react'
 
 export default function ActivityLog({ activities, searchQuery, canDeleteActivities }: any) {
     const { post, processing } = useForm({})
-    const deleteActivities = (event: React.FormEvent) => {
+    const clearActivityLog = (event: React.FormEvent) => {
         event.preventDefault()
-        if (window.confirm('Voulez-vous vraiment supprimer tout le journal d’activité ? Cette action est irréversible.')) {
+        if (window.confirm('Voulez-vous vraiment vider tout le journal d’activité ? Cette action est irréversible.')) {
             post('/journal-activite/supprimer/')
+        }
+    }
+    const deleteActivity = (event: React.FormEvent, activity: any) => {
+        event.preventDefault()
+        if (window.confirm(`Supprimer cette activité de ${activity.user} ? Cette action est irréversible.`)) {
+            post(`/journal-activite/${activity.id}/supprimer/`)
         }
     }
 
@@ -17,7 +23,7 @@ export default function ActivityLog({ activities, searchQuery, canDeleteActiviti
                     <h2 className="text-3xl font-bold">Journal d'activité</h2>
                     <p className="mt-1 text-slate-500">Historique des actions effectuées dans l'application.</p>
                 </div>
-                {canDeleteActivities && <form onSubmit={deleteActivities}>
+                {canDeleteActivities && <form onSubmit={clearActivityLog}>
                     <button type="submit" disabled={processing} className="btn-muted border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50">
                         {processing ? 'Suppression…' : 'Vider le journal'}
                     </button>
@@ -36,6 +42,7 @@ export default function ActivityLog({ activities, searchQuery, canDeleteActiviti
                             <th className="p-3">Action</th>
                             <th className="p-3">Détail</th>
                             <th className="p-3">Projet</th>
+                            {canDeleteActivities && <th className="p-3">Actions</th>}
                         </tr>
                     </thead>
                     <tbody>
@@ -46,9 +53,16 @@ export default function ActivityLog({ activities, searchQuery, canDeleteActiviti
                                 <td className="p-3">{activity.action}</td>
                                 <td className="p-3">{activity.description}</td>
                                 <td className="p-3">{activity.project || '-'}</td>
+                                {canDeleteActivities && <td className="p-3">
+                                    <form onSubmit={(event) => deleteActivity(event, activity)}>
+                                        <button type="submit" disabled={processing} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
+                                            Supprimer
+                                        </button>
+                                    </form>
+                                </td>}
                             </tr>
                         ))}
-                        {!activities.length && <tr><td className="p-6 text-center text-slate-500" colSpan={5}>Aucune activité enregistrée.</td></tr>}
+                        {!activities.length && <tr><td className="p-6 text-center text-slate-500" colSpan={canDeleteActivities ? 6 : 5}>Aucune activité enregistrée.</td></tr>}
                     </tbody>
                 </table>
             </div>

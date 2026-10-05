@@ -147,6 +147,15 @@ def activity_log(request):
 
 @login_required
 @require_http_methods(['POST'])
+@require_permission(can_view_activity_log, 'Seuls le DG et l’administration peuvent supprimer une activité.', fallback='activity-log')
+def activity_log_entry_delete(request, log_id):
+    log = get_object_or_404(ActivityLog, pk=log_id)
+    log.delete()
+    messages.success(request, 'L’activité a été supprimée du journal.')
+    return redirect('activity-log')
+
+@login_required
+@require_http_methods(['POST'])
 @require_permission(can_view_activity_log, 'Seuls le DG et l’administration peuvent vider le journal.', fallback='activity-log')
 def activity_log_delete(request):
     ActivityLog.objects.all().delete()
