@@ -1,11 +1,27 @@
 import AppLayout from '../../layouts/AppLayout'
+import { useForm } from '@inertiajs/react'
 
-export default function ActivityLog({ activities, searchQuery }: any) {
+export default function ActivityLog({ activities, searchQuery, canDeleteActivities }: any) {
+    const { post, processing } = useForm({})
+    const deleteActivities = (event: React.FormEvent) => {
+        event.preventDefault()
+        if (window.confirm('Voulez-vous vraiment supprimer tout le journal d’activité ? Cette action est irréversible.')) {
+            post('/journal-activite/supprimer/')
+        }
+    }
+
     return (
         <AppLayout>
-            <div className="mb-8">
-                <h2 className="text-3xl font-bold">Journal d'activité</h2>
-                <p className="mt-1 text-slate-500">Historique des actions effectuées dans l'application.</p>
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-3xl font-bold">Journal d'activité</h2>
+                    <p className="mt-1 text-slate-500">Historique des actions effectuées dans l'application.</p>
+                </div>
+                {canDeleteActivities && <form onSubmit={deleteActivities}>
+                    <button type="submit" disabled={processing} className="btn-muted border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50">
+                        {processing ? 'Suppression…' : 'Vider le journal'}
+                    </button>
+                </form>}
             </div>
             <form method="get" className="mb-5 flex gap-3">
                 <input className="input max-w-md" name="q" defaultValue={searchQuery} placeholder="Rechercher une action, un utilisateur..." />

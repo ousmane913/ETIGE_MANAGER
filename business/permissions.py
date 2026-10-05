@@ -45,7 +45,7 @@ def can_delete_client(user):
     return is_dg(user)
 
 def can_view_activity_log(user):
-    return is_dg(user)
+    return is_dg(user) or bool(getattr(user, 'is_staff', False))
 
 
 def role_flags(user):

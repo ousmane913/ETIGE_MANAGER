@@ -361,6 +361,23 @@ class EtigeWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, '/')
 
+    def test_dg_and_admin_can_delete_activity_log_but_employee_cannot(self):
+        log = ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action de test')
+        admin_user = User.objects.create_user(username='admin_user', password='password123', is_staff=True)
+
+        for user in (self.dg_user, admin_user):
+            client = TestClient()
+            client.force_login(user)
+            self.assertEqual(client.get('/journal-activite/').status_code, 200)
+            self.assertEqual(client.post('/journal-activite/supprimer/').status_code, 302)
+            self.assertFalse(ActivityLog.objects.filter(pk=log.pk).exists())
+            log = ActivityLog.objects.create(user=self.dg_user, action='Création', object_type='Test', description='Action de test')
+
+        employee_client = TestClient()
+        employee_client.force_login(self.employee_user)
+        self.assertEqual(employee_client.post('/journal-activite/supprimer/').status_code, 302)
+        self.assertTrue(ActivityLog.objects.filter(pk=log.pk).exists())
+
     def test_employee_cannot_delete_client_or_project(self):
         project = self._project('REF-EMP', 'Projet employé')
         c = TestClient()

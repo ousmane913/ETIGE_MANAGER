@@ -122,7 +122,7 @@ def clients(request):
     })
 
 @login_required
-@require_permission(can_view_activity_log, 'Seul le Directeur Général (DG) peut consulter le journal.', fallback='dashboard')
+@require_permission(can_view_activity_log, 'Seuls le Directeur Général (DG) et l’administration peuvent consulter le journal.', fallback='dashboard')
 def activity_log(request):
     query = request.GET.get('q', '').strip()
     logs = ActivityLog.objects.select_related('user', 'project').all()
@@ -142,7 +142,16 @@ def activity_log(request):
             'project': log.project.project_number or log.project.reference if log.project else '',
         } for log in logs[:200]],
         'searchQuery': query,
+        'canDeleteActivities': can_view_activity_log(request.user),
     })
+
+@login_required
+@require_http_methods(['POST'])
+@require_permission(can_view_activity_log, 'Seuls le DG et l’administration peuvent vider le journal.', fallback='activity-log')
+def activity_log_delete(request):
+    ActivityLog.objects.all().delete()
+    messages.success(request, 'Le journal d’activité a été vidé.')
+    return redirect('activity-log')
 
 @login_required
 @require_http_methods(['GET', 'POST'])
