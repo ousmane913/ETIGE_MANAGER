@@ -8,6 +8,7 @@ const ROOT_PATHS = ['/', '/projets/', '/devis-independants/', '/clients/', '/jou
 
 export default function AppLayout({ children, back }: { children: React.ReactNode; back?: string | boolean }) {
   const page = usePage(); const url = page.url; const flash = (page.props as any).flash
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false)
 
   // Affiche le bouton retour si :
   // - prop back est passé explicitement (string = URL cible, true = history.back)
