@@ -42,7 +42,7 @@ export default function ActivityLog({ activities, searchQuery, canDeleteActiviti
                             <th className="p-3">Action</th>
                             <th className="p-3">Détail</th>
                             <th className="p-3">Projet</th>
-                            {canDeleteActivities && <th className="p-3">Actions</th>}
+                            {canDeleteActivities && <th className="p-3"></th>}
                         </tr>
                     </thead>
                     <tbody>
